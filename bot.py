@@ -26,7 +26,7 @@ WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
 CHANNEL_ID   = int(os.environ.get("CHANNEL_ID", "-1004264694127"))
-CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/+your_invite_link")
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/heisebburgscript")
 
 CONCURRENCY     = 100
 DELAY           = 0.5
