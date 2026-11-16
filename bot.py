@@ -29,8 +29,9 @@ CONCURRENCY     = 100
 DELAY           = 0.5
 REQUEST_TIMEOUT = 5
 
-FORCE_JOIN_CHANNEL  = "https://t.me/getmodandroid_1"
-FORCE_JOIN_USERNAME = "@getmodandroid_1"
+# Force join — numeric channel ID for membership check
+FORCE_JOIN_CHAT_ID  = -1004264694127          # int, no quotes, no @
+FORCE_JOIN_CHANNEL  = "https://t.me/getmodandroid_1"  # invite/link user clicks
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -45,39 +46,42 @@ def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
 
+# ================== FORCE JOIN ==================
 async def is_joined(user_id: int) -> bool:
-    """Return True if user is a member of the force-join channel."""
+    """Check if user is a member of the force-join channel."""
     if telegram_app is None:
-        return True  # fail-open if bot not ready
+        logger.warning("telegram_app is None — cannot check join")
+        return False
     try:
         member = await telegram_app.bot.get_chat_member(
-            chat_id=FORCE_JOIN_USERNAME, user_id=user_id
+            chat_id=FORCE_JOIN_CHAT_ID, user_id=user_id
         )
-        return member.status in ("member", "administrator", "creator")
-    except Exception:
-        return False  # fail-closed on API error (forces join)
+        logger.info(f"JOIN CHECK user={user_id} status={member.status}")
+        return member.status in ("creator", "administrator", "member")
+    except Exception as e:
+        logger.error(f"JOIN CHECK FAILED user={user_id} error={type(e).__name__}: {e}")
+        return False
 
 
-async def send_force_join(update_or_query, ctx=None):
-    """Send the force-join prompt with a Join button and a Verify button."""
-    keyboard = [
+def force_join_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 JOIN CHANNEL", url=FORCE_JOIN_CHANNEL)],
         [InlineKeyboardButton("✅ VERIFY / CONTINUE", callback_data="verify_join")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    text = (
+    ])
+
+
+async def send_force_join(message):
+    await message.reply_text(
         "🔒 **JOIN REQUIRED**\n\n"
-        f"Please join our channel first:\n{FORCE_JOIN_CHANNEL}\n\n"
-        "After joining, tap **VERIFY / CONTINUE** below."
+        f"Bot use karne ke liye pehle channel join karo:\n{FORCE_JOIN_CHANNEL}\n\n"
+        "Join karne ke baad **VERIFY / CONTINUE** pe click karo.",
+        reply_markup=force_join_keyboard(),
+        parse_mode="Markdown",
     )
-    if hasattr(update_or_query, "message") and update_or_query.message:
-        await update_or_query.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-    else:
-        await update_or_query.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
 # =========================================================================
-#  ULTIMATE APIS  (SINGLE build_endpoints — duplicate removed)
+#  ULTIMATE APIS
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
@@ -268,13 +272,16 @@ async def _fire_batch(batch, target):
 
 # ================== HANDLERS ==================
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await is_joined(update.effective_user.id):
-        await send_force_join(update)
+    uid = update.effective_user.id
+    if not await is_joined(uid):
+        await send_force_join(update.message)
         return
     keyboard = [[InlineKeyboardButton("🚀 START ULTIMATE BOMBER 🚀", callback_data="start_bomb")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin."
-    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    await update.message.reply_text(
+        "💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
+    )
 
 
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -285,14 +292,26 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if query.data == "verify_join":
         if await is_joined(uid):
             keyboard = [[InlineKeyboardButton("🚀 START ULTIMATE BOMBER 🚀", callback_data="start_bomb")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
             await query.message.edit_text(
                 "✅ **VERIFIED!**\n\n💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin.",
-                reply_markup=reply_markup,
+                reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown",
             )
         else:
-            await query.answer("❌ You haven't joined yet. Please join and try again.", show_alert=True)
+            await query.answer(
+                "❌ Tumne abhi join nahi kiya! Pehle channel join karo phir verify karo.",
+                show_alert=True,
+            )
+        return
+
+    if not await is_joined(uid):
+        await query.message.edit_text(
+            "🔒 **JOIN REQUIRED**\n\n"
+            f"Pehle channel join karo:\n{FORCE_JOIN_CHANNEL}\n\n"
+            "Phir **VERIFY / CONTINUE** pe click karo.",
+            reply_markup=force_join_keyboard(),
+            parse_mode="Markdown",
+        )
         return
 
     if query.data == "start_bomb":
@@ -310,7 +329,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not await is_joined(uid):
-        await send_force_join(update)
+        await send_force_join(update.message)
         return
     text = update.message.text.strip()
     s = user_sessions.get(uid)
@@ -325,16 +344,14 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     s.update(target=text, state="running", running=True, cancelled=False, sent=0, round=0, started_at=time.time())
 
     keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     await update.message.reply_text(
         f"💥 **ULTIMATE BOMBER ACTIVATED** 💥\n\n"
         f"🎯 Target: `{text}`\n"
         f"⚡ Speed: MAXIMUM\n"
         f"📡 Total APIs: {len(ENDPOINTS)}\n"
         f"🔥 **DESTRUCTION STARTED!**",
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
     )
 
     asyncio.create_task(run_bombing(uid, s))
@@ -401,6 +418,7 @@ async def startup():
     await telegram_app.bot.set_webhook(url=full_url, allowed_updates=Update.ALL_TYPES)
     await telegram_app.start()
     logger.info(f"✅ Webhook set: {full_url}")
+    logger.info(f"✅ Force-join channel ID: {FORCE_JOIN_CHAT_ID}")
 
 
 async def webhook(request):
