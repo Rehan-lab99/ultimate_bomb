@@ -30,13 +30,14 @@ DELAY           = 0.5
 REQUEST_TIMEOUT = 5
 
 FORCE_JOIN_CHANNEL  = "https://t.me/getmodandroid_1"
-FORCE_JOIN_USERNAME = -1004264694127  # Yahan integer ID daala gaya hai (bina quotes ke)
+FORCE_JOIN_USERNAME = -1004264694127  # Channel ID
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("tsunami")
 
 user_sessions: dict = {}
+verified_users = set()  # <--- NAYA: Ye yaad rakhega kaun verify ho chuka hai
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
@@ -46,7 +47,9 @@ def is_valid_target(num: str) -> bool:
 
 
 async def is_joined(user_id: int) -> bool:
-    """Return True if user is a member of the force-join channel using ID."""
+    if user_id in verified_users:
+        return True  # Agar pehle verify kar liya hai toh dobara check mat karo
+
     if telegram_app is None:
         return False
     try:
@@ -54,14 +57,17 @@ async def is_joined(user_id: int) -> bool:
             chat_id=FORCE_JOIN_USERNAME, user_id=user_id
         )
         logger.info(f"JOIN CHECK user={user_id} status={member.status}")
-        return member.status in ("creator", "administrator", "member")
+        
+        if member.status in ("creator", "administrator", "member"):
+            verified_users.add(user_id)  # Verify hote hi memory me save kar lo
+            return True
+        return False
     except Exception as e:
         logger.error(f"JOIN CHECK FAILED user={user_id} error={e}")
         return False
 
 
 async def send_force_join(update_or_query, ctx=None):
-    """Send the force-join prompt with a Join button and a Verify button."""
     keyboard = [
         [InlineKeyboardButton("📢 JOIN CHANNEL", url=FORCE_JOIN_CHANNEL)],
         [InlineKeyboardButton("✅ VERIFY / CONTINUE", callback_data="verify_join")],
@@ -272,7 +278,7 @@ async def _fire_batch(batch, target):
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    # Check Force Join
+    # Check if already verified in this session
     if not await is_joined(uid):
         keyboard = [
             [InlineKeyboardButton("📢 JOIN CHANNEL", url=FORCE_JOIN_CHANNEL)],
@@ -287,7 +293,6 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Agar Join hai toh direct start button
     keyboard = [[InlineKeyboardButton("🚀 START ULTIMATE BOMBER 🚀", callback_data="start_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin."
@@ -315,7 +320,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # Baaki buttons ke liye check
+    # Security Check for other buttons
     if not await is_joined(uid):
         await send_force_join(query)
         return
@@ -335,7 +340,6 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    # Force Join Check
     if not await is_joined(uid):
         await send_force_join(update)
         return
