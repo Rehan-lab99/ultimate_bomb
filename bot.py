@@ -27,7 +27,7 @@ WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
 # ⚠️ APNI TELEGRAM ID YAHAN DAALEIN (Admin Panel access ke liye)
-ADMIN_ID = 123456789  
+ADMIN_ID = 6268131639  
 
 # ULTRA FAST MODE
 CONCURRENCY     = 500              
