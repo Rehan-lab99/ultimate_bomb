@@ -29,10 +29,10 @@ PORT        = int(os.environ.get("PORT", 8000))
 # ⚠️ AAPKI TELEGRAM ID
 ADMIN_ID = 8959878185  
 
-# ULTRA FAST MODE
-CONCURRENCY     = 500              
-DELAY           = 0.0              
-REQUEST_TIMEOUT = 3                
+# ULTRA FAST MODE CONFIG
+CONCURRENCY     = 1000             # Ek baar me 1000 requests (Maximum Speed)
+DELAY           = 0.0              # Koi delay nahi
+REQUEST_TIMEOUT = 2.5              # 2.5 second timeout (Dead APIs ko jaldi chhod dega)
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -73,7 +73,7 @@ user_sessions = load_db()
 async def get_http_session() -> aiohttp.ClientSession:
     global _http_session
     if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=500, limit_per_host=150, ssl=False)
+        connector = aiohttp.TCPConnector(limit=2000, limit_per_host=200, ssl=False, force_close=True)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return _http_session
@@ -280,6 +280,9 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
         s["credits_to_use"] = mins
         s["state"] = "running"
+        s["running"] = True  # <--- YAHAN FIX HUA HAI (Yeh line missing thi)
+        s["start_time"] = time.time()
+        s["sent"] = 0
         
         keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
