@@ -25,19 +25,18 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
+CHANNEL_ID   = int(os.environ.get("CHANNEL_ID", "-1004264694127"))
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/+your_invite_link")
+
 CONCURRENCY     = 100
 DELAY           = 0.5
 REQUEST_TIMEOUT = 5
-
-FORCE_JOIN_CHANNEL  = "https://t.me/getmodandroid_1"
-FORCE_JOIN_USERNAME = -1004264694127  # Channel ID
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("tsunami")
 
 user_sessions: dict = {}
-verified_users = set()  # <--- NAYA: Ye yaad rakhega kaun verify ho chuka hai
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
@@ -46,42 +45,24 @@ def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
 
-async def is_joined(user_id: int) -> bool:
-    if user_id in verified_users:
-        return True  # Agar pehle verify kar liya hai toh dobara check mat karo
-
-    if telegram_app is None:
-        return False
+# =========================================================================
+#  MEMBERSHIP CHECK
+# =========================================================================
+async def is_member(bot: Bot, user_id: int) -> bool:
     try:
-        member = await telegram_app.bot.get_chat_member(
-            chat_id=FORCE_JOIN_USERNAME, user_id=user_id
-        )
-        logger.info(f"JOIN CHECK user={user_id} status={member.status}")
-        
-        if member.status in ("creator", "administrator", "member"):
-            verified_users.add(user_id)  # Verify hote hi memory me save kar lo
-            return True
-        return False
+        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        return member.status in ("member", "administrator", "creator")
     except Exception as e:
-        logger.error(f"JOIN CHECK FAILED user={user_id} error={e}")
+        logger.warning(f"membership check failed for {user_id}: {e}")
         return False
 
 
-async def send_force_join(update_or_query, ctx=None):
+def force_join_keyboard():
     keyboard = [
-        [InlineKeyboardButton("📢 JOIN CHANNEL", url=FORCE_JOIN_CHANNEL)],
-        [InlineKeyboardButton("✅ VERIFY / CONTINUE", callback_data="verify_join")],
+        [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)],
+        [InlineKeyboardButton("✅ Verify Membership", callback_data="verify_join")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    text = (
-        "🔒 **JOIN REQUIRED**\n\n"
-        f"Bot use karne ke liye pehle channel join karo:\n{FORCE_JOIN_CHANNEL}\n\n"
-        "Join karne ke baad **VERIFY / CONTINUE** pe click karo."
-    )
-    if hasattr(update_or_query, "message") and update_or_query.message:
-        await update_or_query.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-    else:
-        await update_or_query.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    return InlineKeyboardMarkup(keyboard)
 
 
 # =========================================================================
@@ -278,17 +259,13 @@ async def _fire_batch(batch, target):
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    # Check if already verified in this session
-    if not await is_joined(uid):
-        keyboard = [
-            [InlineKeyboardButton("📢 JOIN CHANNEL", url=FORCE_JOIN_CHANNEL)],
-            [InlineKeyboardButton("✅ VERIFY / CONTINUE", callback_data="verify_join")],
-        ]
+    if not await is_member(ctx.bot, uid):
         await update.message.reply_text(
-            "🔒 **JOIN REQUIRED**\n\n"
-            f"Bot use karne ke liye pehle channel join karo:\n{FORCE_JOIN_CHANNEL}\n\n"
-            "Join karne ke baad **VERIFY / CONTINUE** pe click karo.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            "🔒 **Access Locked**\n\n"
+            "You must join our channel to use this bot.\n\n"
+            "1️⃣ Click **📢 Join Channel**\n"
+            "2️⃣ Come back and click **✅ Verify Membership**",
+            reply_markup=force_join_keyboard(),
             parse_mode="Markdown",
         )
         return
@@ -301,31 +278,37 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     uid = query.from_user.id
 
-    # Verify Button Logic
     if query.data == "verify_join":
-        if await is_joined(uid):
+        if await is_member(ctx.bot, uid):
+            await query.answer("✅ Verified!", show_alert=True)
             keyboard = [[InlineKeyboardButton("🚀 START ULTIMATE BOMBER 🚀", callback_data="start_bomb")]]
             await query.message.edit_text(
-                "✅ **VERIFIED!**\n\n💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin.",
+                "✅ **Membership Verified**\n\nClick below to begin.",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown",
             )
         else:
-            await query.answer(
-                "❌ Tumne abhi join nahi kiya! Pehle channel join karo phir verify karo.",
-                show_alert=True,
+            await query.answer("❌ You haven't joined the channel yet!", show_alert=True)
+            await query.message.edit_text(
+                "❌ **Not Joined Yet**\n\nPlease join the channel first, then verify again.",
+                reply_markup=force_join_keyboard(),
+                parse_mode="Markdown",
             )
         return
 
-    # Security Check for other buttons
-    if not await is_joined(uid):
-        await send_force_join(query)
-        return
+    await query.answer()
 
     if query.data == "start_bomb":
+        if not await is_member(ctx.bot, uid):
+            await query.message.edit_text(
+                "🔒 **Join Required**\n\nPlease join the channel first.",
+                reply_markup=force_join_keyboard(),
+                parse_mode="Markdown",
+            )
+            return
+
         user_sessions[uid] = {"state": "awaiting_target", "running": False}
         await query.message.edit_text("📱 Send target number (10 digits, no +91):")
 
@@ -340,8 +323,11 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    if not await is_joined(uid):
-        await send_force_join(update)
+    if not await is_member(ctx.bot, uid):
+        await update.message.reply_text(
+            "🔒 Please join the channel first.",
+            reply_markup=force_join_keyboard(),
+        )
         return
 
     text = update.message.text.strip()
