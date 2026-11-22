@@ -18,7 +18,7 @@ from telegram.ext import (
 import uvicorn
 
 # ================== CONFIG ==================
-BOT_TOKEN   = "9192223271:AAEfNQbovDMvHpDnGc4p_-9Zc6hxgOPg_M8"
+BOT_TOKEN   = "9192223271:AAHI2vK-efdy83e-OWtO2P9hwMQLTZSE8sw"
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
 
