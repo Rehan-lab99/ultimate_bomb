@@ -15,14 +15,18 @@ from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters,
 )
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse, Response
+from starlette.routing import Route
+import uvicorn
 
 # ================== CONFIG ==================
-# APNA TOKEN YAHAN HARDCODE KARO
-BOT_TOKEN   = "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
+WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+PORT        = int(os.environ.get("PORT", 8000))
 
-# APNI CHANNEL KI DETAILS YAHAN DAALO (Force Join ke liye)
-CHANNEL_ID   = int("-1001234567890") 
-CHANNEL_LINK = "https://t.me/YourChannelLink"
+CHANNEL_ID   = int(os.environ.get("CHANNEL_ID", "-1004264694127"))
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/heisebburgscript")
 
 CONCURRENCY     = 100
 DELAY           = 0.5
@@ -34,9 +38,12 @@ logger = logging.getLogger("tsunami")
 
 user_sessions: dict = {}
 _http_session: Optional[aiohttp.ClientSession] = None
+telegram_app: Optional[Application] = None
+
 
 def is_valid_target(num: str) -> bool:
     return num.isdigit() and len(num) == 10 and num[0] in "6789"
+
 
 # =========================================================================
 #  MEMBERSHIP CHECK
@@ -49,6 +56,7 @@ async def is_member(bot: Bot, user_id: int) -> bool:
         logger.warning(f"membership check failed for {user_id}: {e}")
         return False
 
+
 def force_join_keyboard():
     keyboard = [
         [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)],
@@ -56,8 +64,9 @@ def force_join_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 # =========================================================================
-#  ULTIMATE APIS (ALL 108 APIS INCLUDED)
+#  ULTIMATE APIS
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
@@ -188,8 +197,11 @@ def build_endpoints():
 
     return E
 
+
 ENDPOINTS = build_endpoints()
 
+
+# ================== HTTP SESSION ==================
 async def get_http_session() -> aiohttp.ClientSession:
     global _http_session
     if _http_session is None or _http_session.closed:
@@ -197,6 +209,7 @@ async def get_http_session() -> aiohttp.ClientSession:
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         _http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return _http_session
+
 
 async def fire_endpoint(ep: dict, target: str) -> bool:
     url = ep["url"].replace("{t}", target)
@@ -221,6 +234,12 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
         headers["X-Timestamp"] = ts
         headers["X-Signature"] = sig
 
+    if ep.get("special_sig"):
+        random_bytes = os.urandom(32)
+        sig = base64.b64encode(random_bytes).decode('utf-8')
+        headers["x-timestamp"] = ts
+        headers["x-signature"] = sig
+
     try:
         session = await get_http_session()
         async with session.request(method=ep["method"], url=url, headers=headers, data=data if data else None, ssl=False) as resp:
@@ -229,10 +248,12 @@ async def fire_endpoint(ep: dict, target: str) -> bool:
     except Exception:
         return False
 
+
 async def _fire_batch(batch, target):
     tasks = [fire_endpoint(ep, target) for ep in batch]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     return sum(1 for r in results if r is True)
+
 
 # ================== HANDLERS ==================
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -253,6 +274,7 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "💥 **ULTIMATE BOMBER** 💥\n\nAll APIs loaded. Click below to begin."
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
 
 async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -297,6 +319,7 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             s["cancelled"] = True
             await query.message.edit_text("🛑 **STOPPING...**", parse_mode="Markdown")
 
+
 async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
@@ -334,6 +357,7 @@ async def text_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     asyncio.create_task(run_bombing(uid, s))
 
+
 async def run_bombing(uid: int, s: dict):
     target = s["target"]
     sent = 0
@@ -368,21 +392,68 @@ async def run_bombing(uid: int, s: dict):
     except Exception:
         pass
 
-# ================== MAIN POLLING ==================
-def main():
-    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        sys.exit("❌ BOT_TOKEN missing. Code ke andar apna token daalo.")
 
-    logger.info("Starting Ultimate Bomber Bot (Polling Mode)...")
-    
-    app = Application.builder().token(BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+# ================== WEBHOOK & STARLETTE ==================
+async def health(request):
+    return PlainTextResponse("OK", status_code=200)
 
-    logger.info("✅ Bot is live. Waiting for commands...")
-    app.run_polling()
+
+async def root(request):
+    return PlainTextResponse("Ultimate Bomber Live 💥")
+
+
+async def startup():
+    global telegram_app
+    if not WEBHOOK_URL:
+        logger.warning("RENDER_EXTERNAL_URL not set — webhook will NOT be registered")
+        return
+    webhook_path = f"/webhook/{BOT_TOKEN}"
+    full_url = f"{WEBHOOK_URL}{webhook_path}"
+
+    telegram_app = Application.builder().token(BOT_TOKEN).updater(None).build()
+    telegram_app.add_handler(CommandHandler("start", start_cmd))
+    telegram_app.add_handler(CallbackQueryHandler(button_handler))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+    await telegram_app.initialize()
+    await telegram_app.bot.set_webhook(url=full_url, allowed_updates=Update.ALL_TYPES)
+    await telegram_app.start()
+    logger.info(f"✅ Webhook set: {full_url}")
+
+
+async def webhook(request):
+    if telegram_app is None:
+        return Response("not ready", status_code=503)
+    try:
+        data = await request.json()
+        update = Update.de_json(data, telegram_app.bot)
+        await telegram_app.process_update(update)
+    except Exception as e:
+        logger.exception(f"webhook error: {e}")
+    return Response("ok")
+
+
+async def shutdown():
+    global _http_session, telegram_app
+    if _http_session and not _http_session.closed:
+        await _http_session.close()
+    if telegram_app:
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+
+
+def create_app() -> Starlette:
+    routes = [
+        Route("/", root),
+        Route("/health", health),
+        Route(f"/webhook/{BOT_TOKEN}", webhook, methods=["POST"]),
+    ]
+    return Starlette(routes=routes, on_startup=[startup], on_shutdown=[shutdown])
+
+
+app = create_app()
 
 if __name__ == "__main__":
-    main()
+    if not BOT_TOKEN:
+        sys.exit("❌ BOT_TOKEN missing")
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
